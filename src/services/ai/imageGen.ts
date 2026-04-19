@@ -1,0 +1,566 @@
+/**
+ * AI 图片生成模块
+ * 包含通义万相、火山方舟 Seedream、OpenRouter、Grsai 等图片生成功能
+ */
+import { fetch } from '@tauri-apps/plugin-http';
+import type { ApiConfig } from '../../types';
+
+// ========== 通义万相 - 图片生成 ==========
+
+interface WanxResponse {
+  output: {
+    task_id: string;
+    task_status: string;
+    results?: Array<{
+      url: string;
+    }>;
+  };
+}
+
+// 提交图片生成任务
+export async function submitWanxTask(config: ApiConfig, prompt: string): Promise<string> {
+  const baseUrl = config.baseUrl || 'https://dashscope.aliyuncs.com/api/v1';
+  
+  const response = await fetch(`${baseUrl}/services/aigc/text2image/image-synthesis`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json',
+      'X-DashScope-Async': 'enable'
+    },
+    body: JSON.stringify({
+      model: config.model || 'wanx-v1',
+      input: { prompt },
+      parameters: {
+        size: '768*1024',
+        n: 1,
+        style: '<auto>'
+      }
+    })
+  });
+  
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`图片生成任务提交失败 (${response.status}): ${errText}`);
+  }
+  
+  const data = await response.json() as WanxResponse;
+  return data.output.task_id;
+}
+
+// 查询图片生成任务结果
+async function queryWanxTask(config: ApiConfig, taskId: string): Promise<string | null> {
+  const baseUrl = config.baseUrl || 'https://dashscope.aliyuncs.com/api/v1';
+  
+  const response = await fetch(`${baseUrl}/tasks/${taskId}`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${config.apiKey}`
+    }
+  });
+  
+  if (!response.ok) {
+    throw new Error(`查询任务失败 (${response.status})`);
+  }
+  
+  const data = await response.json() as WanxResponse;
+  
+  if (data.output.task_status === 'SUCCEEDED') {
+    return data.output.results?.[0]?.url || null;
+  } else if (data.output.task_status === 'FAILED') {
+    throw new Error('图片生成失败');
+  }
+  
+  return null; // 还在生成中
+}
+
+// 等待图片生成完成（轮询）
+export async function waitForWanxTask(config: ApiConfig, taskId: string, maxRetries = 30): Promise<string> {
+  for (let i = 0; i < maxRetries; i++) {
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
+    const url = await queryWanxTask(config, taskId);
+    if (url) return url;
+  }
+  
+  throw new Error('图片生成超时');
+}
+
+// ========== 火山方舟 Seedream - 图片生成 ==========
+
+// 图片生成参数
+export interface ImageGenParams {
+  /** 文本提示词 */
+  prompt: string;
+  /** 图生图模式：参考图片URL或Base64（支持单张或多张数组） */
+  referenceImage?: string | string[];
+  /** 宽高比：1:1, 16:9, 9:16, 3:4, 4:3 */
+  aspectRatio?: string;
+  /** 模型ID */
+  model?: string;
+  /** 尺寸：1K, 2K, 3K, 4K */
+  size?: string;
+}
+
+// 调用火山方舟 API（使用 OpenAI 兼容格式）
+async function callVolcImageAPI(config: ApiConfig, path: string, method: string, body: string): Promise<any> {
+  // 使用 OpenAI 兼容的 images/generations 端点
+  const baseUrl = config.baseUrl || 'https://ark.cn-beijing.volces.com/api/v3';
+  
+  // 火山方舟 API Key 鉴权
+  const response = await fetch(`${baseUrl}${path}`, {
+    method,
+    headers: {
+      'Authorization': `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: method !== 'GET' ? body : undefined
+  });
+  
+  if (!response.ok) {
+    const errText = await response.text();
+    
+    // 解析错误信息，提供更友好的提示
+    let errorMessage = `火山方舟 API 请求失败 (${response.status}): ${errText}`;
+    try {
+      const errorData = JSON.parse(errText);
+      const errorCode = errorData.error?.code;
+      const errorMsg = errorData.error?.message;
+      
+      if (errorCode === 'InputImageSensitiveContentDetected') {
+        errorMessage = `参考图片包含敏感内容，火山方舟拒绝处理。\n\n错误详情：${errorMsg}\n\n建议：\n1. 更换参考图片，避免包含暴力、色情、政治敏感等内容\n2. 尝试使用其他图片生成模型（如 Grsai 或 OpenRouter）`;
+      } else if (errorCode) {
+        errorMessage = `火山方舟错误 (${errorCode}): ${errorMsg}`;
+      }
+    } catch (e) {
+      // 如果解析失败，使用原始错误信息
+    }
+    
+    throw new Error(errorMessage);
+  }
+  
+  return await response.json();
+}
+
+// 火山方舟图片生成（同步返回，非异步任务）
+async function generateVolcImage(params: ImageGenParams, config: ApiConfig): Promise<string> {
+  // 火山方舟图片生成 API 格式
+  const requestBody: any = {
+    model: params.model || config.model || 'doubao-seedream-5-0-260128',
+    prompt: params.prompt,
+    response_format: 'url'
+  };
+  
+  // 如果有参考图片，使用图生图模式
+  if (params.referenceImage) {
+    const images = Array.isArray(params.referenceImage) ? params.referenceImage : [params.referenceImage];
+    
+    // 过滤出有效的 URL 或 Base64
+    const validImages = images.filter(img => 
+      img.startsWith('http://') || 
+      img.startsWith('https://') || 
+      img.startsWith('data:image/')
+    );
+    
+    if (validImages.length > 0) {
+      requestBody.image = validImages.length === 1 ? validImages[0] : validImages;
+      console.log('火山方舟图生图模式，参考图片数:', validImages.length);
+    } else {
+      console.warn('⚠️ 参考图片格式无效，将使用文生图模式');
+    }
+  }
+  
+  // 处理 size 参数
+  if (params.size) {
+    if (params.size.toLowerCase() === '1k') {
+      requestBody.size = '2k';
+      console.log('⚠️ 1K 分辨率不满足最小像素要求，自动升级到 2K');
+    } else {
+      requestBody.size = params.size;
+    }
+  } else if (params.aspectRatio) {
+    const ratioMap: Record<string, string> = {
+      '16:9': '2560x1440',
+      '9:16': '1440x2560',
+      '1:1': '1920x1920',
+      '4:3': '2400x1800',
+      '3:4': '1800x2400'
+    };
+    const size = ratioMap[params.aspectRatio];
+    if (size) {
+      requestBody.size = size;
+    } else {
+      requestBody.size = '2k';
+    }
+  } else {
+    requestBody.size = '2k';
+    console.log('⚠️ 未指定分辨率，默认使用 2K');
+  }
+  
+  console.log('火山方舟图片生成请求:', JSON.stringify(requestBody, null, 2));
+  
+  const data = await callVolcImageAPI(
+    config,
+    '/images/generations',
+    'POST',
+    JSON.stringify(requestBody)
+  );
+  
+  if (data.data && data.data.length > 0 && data.data[0].url) {
+    console.log('火山方舟图片生成成功，URL:', data.data[0].url);
+    console.log('火山方舟图片尺寸:', data.data[0].size || '未返回');
+    return data.data[0].url;
+  }
+  
+  throw new Error('图片生成失败：响应中未找到图片 URL');
+}
+
+// 公开 API：火山方舟图片生成
+export async function generateImageWithVolcEngine(
+  params: ImageGenParams,
+  config: ApiConfig
+): Promise<string> {
+  return await generateImage(params, config);
+}
+
+// ========== OpenRouter 图片生成 ==========
+
+export async function generateImageWithOpenRouter(
+  params: ImageGenParams,
+  config: ApiConfig
+): Promise<string> {
+  const { prompt, aspectRatio, size } = params;
+  const model = config.model || 'black-forest-labs/flux.2-pro';
+  
+  console.log('OpenRouter 图片生成请求:', { model, promptLength: prompt.length, config });
+  
+  const baseUrl = config.baseUrl || 'https://openrouter.ai/api/v1';
+  
+  const requestBody: any = {
+    model: model,
+    messages: [
+      {
+        role: 'user',
+        content: prompt
+      }
+    ],
+    modalities: ['image']
+  };
+  
+  if (aspectRatio || size) {
+    requestBody.image_config = {};
+    if (aspectRatio) {
+      requestBody.image_config.aspect_ratio = aspectRatio;
+    }
+    if (size) {
+      requestBody.image_config.image_size = size;
+    }
+  }
+  
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${config.apiKey}`,
+      'HTTP-Referer': 'https://video-generator.app',
+      'X-Title': 'Video Generator'
+    },
+    body: JSON.stringify(requestBody)
+  });
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenRouter API 请求失败: ${response.status} ${errorText}`);
+  }
+  
+  const result = await response.json();
+  console.log('OpenRouter 图片生成结果:', result);
+  
+  if (result.error) {
+    throw new Error(`OpenRouter 错误: ${result.error.message || JSON.stringify(result.error)}`);
+  }
+  
+  if (result.choices?.[0]?.message?.images && result.choices[0].message.images.length > 0) {
+    const imageUrl = result.choices[0].message.images[0]?.image_url?.url;
+    if (imageUrl) {
+      console.log('OpenRouter 图片生成成功');
+      return imageUrl;
+    }
+  }
+  
+  throw new Error('OpenRouter 返回格式错误,未找到生成的图片');
+}
+
+// ========== Grsai 图片生成 ==========
+
+interface GrsaiImageParams {
+  prompt: string;
+  model?: string;
+  size?: string;
+  aspectRatio?: string;
+  referenceImage?: string | string[];
+  useStream?: boolean;
+  onProgress?: (progress: number) => void;
+}
+
+export async function generateImageWithGrsai(params: GrsaiImageParams, apiKey: string, baseUrl: string = 'https://grsai.dakka.com.cn'): Promise<string> {
+  const { prompt, model = 'nano-banana-fast', size = '2K', aspectRatio = 'auto', referenceImage, useStream = true, onProgress } = params;
+  console.log('Grsai 图片生成请求:', { model, promptLength: prompt.length, size, aspectRatio, useStream, baseUrl });
+  
+  const requestBody: any = {
+    model,
+    prompt,
+    aspectRatio,
+    imageSize: size,
+    shutProgress: false
+  };
+  
+  if (referenceImage) {
+    requestBody.urls = Array.isArray(referenceImage) ? referenceImage : [referenceImage];
+  }
+  
+  const apiEndpoint = `${baseUrl}/v1/draw/nano-banana`;
+  
+  console.log('🔑 Grsai API Key:', apiKey ? `${apiKey.substring(0, 10)}...` : '未配置');
+  console.log('📡 Grsai API Endpoint:', apiEndpoint);
+  console.log('📦 Request Body:', JSON.stringify(requestBody, null, 2));
+  
+  if (useStream) {
+    const response = await fetch(apiEndpoint, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody)
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('无法获取响应流');
+    }
+    
+    const decoder = new TextDecoder();
+    let buffer = '';
+    
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      
+      for (const line of lines) {
+        const trimmedLine = line.trim();
+        if (!trimmedLine) continue;
+        
+        let jsonStr = trimmedLine;
+        if (jsonStr.startsWith('data:')) {
+          jsonStr = jsonStr.substring(5).trim();
+        }
+        
+        if (jsonStr) {
+          try {
+            const data = JSON.parse(jsonStr);
+            console.log('Grsai 流式响应:', JSON.stringify(data).substring(0, 200));
+            
+            if (data.progress !== undefined && onProgress) {
+              onProgress(data.progress);
+            }
+            
+            if (data.status === 'succeeded' && data.results && data.results.length > 0) {
+              const result = data.results[0];
+              const imageUrl = result.url || result.content;
+              if (imageUrl) {
+                console.log('Grsai 图片生成成功:', imageUrl.substring(0, 100) + '...');
+                console.log('Grsai 图片URL完整长度:', imageUrl.length);
+                if (imageUrl.startsWith('data:')) {
+                  console.log('Grsai 返回的是 Base64 格式图片');
+                } else {
+                  console.log('Grsai 返回的是 URL 格式:', imageUrl.substring(0, 200));
+                }
+                return imageUrl;
+              }
+            }
+            
+            if (data.status === 'failed') {
+              throw new Error(data.failure_reason || data.error || '图片生成失败');
+            }
+          } catch (e) {
+            // 忽略非JSON行
+          }
+        }
+      }
+    }
+    
+    throw new Error('流式响应结束但未获取到图片');
+  } else {
+    const drawResponse = await fetch(apiEndpoint, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody)
+    });
+    
+    if (!drawResponse.ok) {
+      const errorText = await drawResponse.text();
+      throw new Error(`HTTP ${drawResponse.status}: ${errorText || drawResponse.statusText}`);
+    }
+    
+    const drawData = await drawResponse.json();
+    console.log('Grsai 绘画接口响应:', JSON.stringify(drawData).substring(0, 1000));
+    
+    if (drawData.error) {
+      throw new Error(`Grsai API 错误: ${drawData.error}`);
+    }
+    
+    if (drawData.data && (drawData.data.url || drawData.data.content)) {
+      const imageUrl = drawData.data.url || drawData.data.content;
+      console.log('Grsai 直接返回图片:', imageUrl.substring(0, 100) + '...');
+      return imageUrl;
+    }
+    
+    if (drawData.data && drawData.data.results && drawData.data.results.length > 0) {
+      const imgResult = drawData.data.results[0];
+      const imageUrl = imgResult.url || imgResult.content;
+      if (imageUrl) {
+        console.log('Grsai 返回图片数组:', imageUrl.substring(0, 100) + '...');
+        return imageUrl;
+      }
+    }
+    
+    if (drawData.data && typeof drawData.data === 'string' && drawData.data.startsWith('data:')) {
+      console.log('Grsai 返回 base64 图片:', drawData.data.substring(0, 100) + '...');
+      return drawData.data;
+    }
+    
+    if (drawData.url || drawData.content) {
+      const imageUrl = drawData.url || drawData.content;
+      console.log('Grsai 直接返回（顶层）:', imageUrl.substring(0, 100) + '...');
+      return imageUrl;
+    }
+    
+    if (drawData.code !== 0 || !drawData.data || !drawData.data.id) {
+      throw new Error(drawData.msg || drawData.message || drawData.error || '绘画请求失败');
+    }
+    
+    const taskId = drawData.data.id;
+    console.log('Grsai 任务ID:', taskId);
+    
+    const maxAttempts = 60;
+    const interval = 2000;
+    
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, interval));
+      
+      const resultResponse = await fetch(`${baseUrl}/v1/draw/result`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: taskId })
+      });
+      
+      const resultData = await resultResponse.json();
+      console.log(`Grsai 结果查询 ${attempt + 1}/${maxAttempts}:`, JSON.stringify(resultData).substring(0, 500));
+      
+      if (resultData.code === 0 && resultData.data) {
+        const result = resultData.data;
+        console.log('Grsai 详细结果:', JSON.stringify(result).substring(0, 500));
+        
+        if (result.progress !== undefined && onProgress) {
+          onProgress(result.progress);
+        }
+        
+        if (result.status === 'succeeded' && result.results && result.results.length > 0) {
+          const imgResult = result.results[0];
+          const imageUrl = imgResult.url || imgResult.content;
+          if (imageUrl) {
+            console.log('Grsai 图片生成成功:', imageUrl.substring(0, 100) + '...');
+            return imageUrl;
+          }
+        }
+        if (result.status === 'failed') {
+          throw new Error(result.failure_reason || result.error || '图片生成失败');
+        }
+        console.log(`Grsai 当前状态: ${result.status || 'unknown'}，继续等待...`);
+      } else {
+        console.log(`Grsai 返回错误: code=${resultData.code}, msg=${resultData.msg || resultData.message || 'unknown'}`);
+        if (resultData.code !== 0) {
+          throw new Error(resultData.msg || resultData.message || 'apikey error');
+        }
+      }
+    }
+    
+    throw new Error('图片生成超时');
+  }
+}
+
+// 单独获取 Grsai 绘画结果接口
+export async function getGrsaiResult(taskId: string, apiKey: string, baseUrl: string = 'https://grsai.dakka.com.cn'): Promise<{
+  status: string;
+  url?: string;
+  content?: string;
+  progress?: number;
+  failureReason?: string;
+  error?: string;
+}> {
+  console.log('Grsai 获取结果:', { taskId, baseUrl });
+  
+  const response = await fetch(`${baseUrl}/v1/draw/result`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: taskId })
+  });
+  
+  const data = await response.json();
+  console.log('Grsai 结果查询响应:', data);
+  
+  if (data.code !== 0) {
+    throw new Error(data.msg || '查询结果失败');
+  }
+  
+  const result = data.data;
+  return {
+    status: result.status,
+    url: result.results?.[0]?.url,
+    content: result.results?.[0]?.content,
+    progress: result.progress,
+    failureReason: result.failure_reason,
+    error: result.error
+  };
+}
+
+// ========== 统一的图片生成 API ==========
+
+export async function generateImage(
+  params: ImageGenParams,
+  config: ApiConfig
+): Promise<string> {
+  const provider = config.provider?.toLowerCase() || '';
+  
+  if (provider === 'grsai') {
+    console.log('使用 Grsai 图片生成...');
+    if (!config.apiKey) {
+      throw new Error('Grsai API 密钥未配置，请在设置页面配置');
+    }
+    return await generateImageWithGrsai({
+      prompt: params.prompt,
+      model: config.model || 'nano-banana-fast',
+      size: params.size || '2K',
+      aspectRatio: params.aspectRatio || 'auto',
+      referenceImage: params.referenceImage
+    }, config.apiKey);
+  }
+  
+  if (provider === 'openrouter') {
+    console.log('使用 OpenRouter 图片生成...');
+    if (!config.apiKey) {
+      throw new Error('OpenRouter API 密钥未配置，请在设置页面配置');
+    }
+    return await generateImageWithOpenRouter(params, config);
+  }
+  
+  // 默认使用火山方舟
+  console.log('使用火山方舟图片生成...');
+  return await generateVolcImage(params, config);
+}

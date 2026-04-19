@@ -1,0 +1,416 @@
+/**
+ * AI 视频生成模块
+ * 包含火山引擎、GRSai、Wan 2.6、OpenRouter 等视频生成功能
+ */
+import { fetch } from '@tauri-apps/plugin-http';
+import type { ApiConfig } from '../../types';
+import { generateVolcSignature } from './apiClients';
+import { pollWithFixedInterval } from '../../utils/poll';
+import { VIDEO_POLL_INTERVAL_MS, VIDEO_MAX_POLL_RETRIES } from '../../constants';
+
+// 视频生成参数类型
+export interface VideoGenParams {
+  prompt: string;
+  firstFrameImage?: string;
+  lastFrameImage?: string;
+  referenceImages?: string[];
+  aspectRatio?: string;
+  duration?: number;
+  enableAudio?: boolean;
+}
+
+// 视频生成结果类型
+export interface VideoGenResult {
+  taskId: string;
+  mode: 'text-to-video' | 'image-to-video' | 'first-last-frame';
+}
+
+// ========== 火山引擎视频生成 ==========
+
+function parseVolcCredentials(apiKey: string): { accessKey: string; secretKey: string } | null {
+  if (apiKey.includes(':')) {
+    const [accessKey, secretKey] = apiKey.split(':');
+    return { accessKey, secretKey };
+  }
+  return null;
+}
+
+const DEFAULT_VOLC_ARK_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3';
+
+async function callVolcEngine(config: ApiConfig, path: string, method: string, body: string, retryCount: number = 2): Promise<any> {
+  let authHeader: string;
+  
+  if (config.apiKey.includes(':')) {
+    const parsed = parseVolcCredentials(config.apiKey);
+    if (!parsed) throw new Error('火山引擎 API Key 格式错误，请输入：AccessKeyID:SecretAccessKey');
+    const query = '';
+    authHeader = await generateVolcSignature(parsed.accessKey, parsed.secretKey, method, path, query, body);
+  } else {
+    authHeader = `Bearer ${config.apiKey}`;
+  }
+
+  const baseUrl = config.baseUrl || DEFAULT_VOLC_ARK_BASE_URL;
+  const url = `${baseUrl}${path}`;
+  console.log(`[VolcEngine] 请求: ${method} ${url}`);
+  
+  let lastError: any;
+  
+  for (let attempt = 0; attempt <= retryCount; attempt++) {
+    if (attempt > 0) {
+      console.log(`[VolcEngine] 第 ${attempt} 次重试...`);
+      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+    }
+    
+    try {
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json'
+        },
+        body: method !== 'GET' ? body : undefined
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`火山引擎 API 请求失败 (${response.status}): ${errText}`);
+      }
+
+      return await response.json();
+    } catch (error: any) {
+      lastError = error;
+      console.error(`[VolcEngine] 第 ${attempt + 1} 次请求失败:`, error.message);
+      if (!error.message?.includes('error sending request')) {
+        throw error;
+      }
+    }
+  }
+  
+  console.error(`[VolcEngine] 请求失败，已重试 ${retryCount} 次`);
+  throw new Error(`网络请求失败，请检查：1.网络连接 2.能否访问 ${baseUrl} 3.防火墙/代理设置`);
+}
+
+export async function submitVolcVideoTask(
+  params: VideoGenParams,
+  config: ApiConfig
+): Promise<VideoGenResult> {
+  const { prompt, firstFrameImage, lastFrameImage, referenceImages, aspectRatio, duration, enableAudio = true } = params;
+  
+  const content: any[] = [];
+  
+  if (prompt) {
+    content.push({ type: 'text', text: prompt });
+  }
+  
+  let mode: 'text-to-video' | 'image-to-video' | 'first-last-frame' = 'text-to-video';
+  
+  if (firstFrameImage && lastFrameImage) {
+    mode = 'first-last-frame';
+    content.push({ type: 'image_url', image_url: { url: firstFrameImage }, role: 'first_frame' });
+    content.push({ type: 'image_url', image_url: { url: lastFrameImage }, role: 'last_frame' });
+  } else if (firstFrameImage) {
+    mode = 'image-to-video';
+    content.push({ type: 'image_url', image_url: { url: firstFrameImage }, role: 'first_frame' });
+  } else if (referenceImages && referenceImages.length > 0) {
+    mode = 'image-to-video';
+    referenceImages.forEach((imgUrl) => {
+      content.push({ type: 'image_url', image_url: { url: imgUrl }, role: 'reference_image' });
+    });
+  }
+  
+  const requestBody: any = {
+    model: config.model || 'doubao-seedance-1-5-pro-251215',
+    content
+  };
+  
+  if (aspectRatio) requestBody.ratio = aspectRatio;
+  
+  const MIN_DURATION = 5;
+  const MAX_DURATION = 10;
+  
+  if (duration !== undefined) {
+    requestBody.duration = Math.max(MIN_DURATION, Math.min(MAX_DURATION, duration));
+  } else {
+    requestBody.duration = MIN_DURATION;
+  }
+  
+  requestBody.motion_duration = requestBody.duration;
+  requestBody.resolution = '720p';
+  requestBody.generate_audio = enableAudio;
+  requestBody.watermark = false;
+  
+  const body = JSON.stringify(requestBody);
+  console.log(`视频生成请求 [${mode}]：`, JSON.stringify(requestBody, null, 2));
+
+  const data = await callVolcEngine(config, '/contents/generations/tasks', 'POST', body);
+  
+  return { taskId: data.id || data.task_id || '', mode };
+}
+
+export async function queryVolcVideoTask(
+  taskId: string,
+  config: ApiConfig
+): Promise<{ status: string; videoUrl?: string; duration?: number; ratio?: string; resolution?: string; }> {
+  const data = await callVolcEngine(config, `/contents/generations/tasks/${taskId}`, 'GET', '');
+  const status = data.status || '';
+  console.log('视频任务状态:', status, '响应:', data);
+  
+  if (status === 'succeeded') {
+    const videoUrl = data.content?.video_url || 
+      data.output?.video_url || 
+      (data.output?.videos && data.output.videos[0]?.url) ||
+      data.video_url || null;
+    return { status: 'finished', videoUrl: videoUrl || undefined, duration: data.duration, ratio: data.ratio, resolution: data.resolution };
+  } else if (status === 'failed') {
+    throw new Error('视频生成失败: ' + (data.error?.message || '未知错误'));
+  } else if (status === 'expired') {
+    throw new Error('视频生成任务超时');
+  } else if (status === 'cancelled') {
+    throw new Error('视频生成任务已取消');
+  }
+  return { status };
+}
+
+export async function waitForVolcVideo(
+  taskId: string,
+  config: ApiConfig,
+  maxRetries = VIDEO_MAX_POLL_RETRIES,
+  intervalMs = VIDEO_POLL_INTERVAL_MS
+): Promise<string> {
+  console.log(`开始等待视频生成，任务ID: ${taskId}，查询间隔: ${intervalMs/1000}秒`);
+  
+  return pollWithFixedInterval(async () => {
+    const result = await queryVolcVideoTask(taskId, config);
+    
+    if (result.status === 'finished' && result.videoUrl) {
+      return { done: true, result: result.videoUrl };
+    }
+    
+    return { done: false, status: result.status };
+  }, {
+    intervalMs,
+    maxRetries,
+    taskName: '火山引擎视频生成'
+  });
+}
+
+export async function generateVideoWithVolcEngine(
+  params: VideoGenParams,
+  config: ApiConfig
+): Promise<string> {
+  const { taskId } = await submitVolcVideoTask(params, config);
+  return await waitForVolcVideo(taskId, config);
+}
+
+// ========== GRSai 视频生成 (Sora2) ==========
+
+interface GRSaiVideoResult {
+  id: string;
+  results?: Array<{ url: string; removeWatermark: boolean; pid: string; }>;
+  progress: number;
+  status: 'running' | 'succeeded' | 'failed';
+  failure_reason?: string;
+  error?: string;
+}
+
+async function submitGRSaiVideoTask(params: VideoGenParams, config: ApiConfig): Promise<{ id: string }> {
+  const { prompt, firstFrameImage, referenceImages, aspectRatio = '16:9', duration = 10 } = params;
+  
+  const requestBody: any = {
+    model: 'sora-2', prompt, aspectRatio, duration, webHook: '-1', shutProgress: true
+  };
+  
+  if (firstFrameImage) requestBody.url = firstFrameImage;
+  else if (referenceImages && referenceImages.length > 0) requestBody.url = referenceImages[0];
+  
+  const response = await fetch(`${config.baseUrl}/v1/video/sora-video`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${config.apiKey}` },
+    body: JSON.stringify(requestBody)
+  });
+  
+  if (!response.ok) throw new Error(`GRSai API 请求失败: ${response.status} ${await response.text()}`);
+  
+  const result = await response.json();
+  if (result.code !== 0) throw new Error(`GRSai 错误: ${result.msg}`);
+  return { id: result.data.id };
+}
+
+async function waitForGRSaiVideo(id: string, config: ApiConfig, maxWaitTime = 300000): Promise<string> {
+  const startTime = Date.now();
+  while (Date.now() - startTime < maxWaitTime) {
+    const response = await fetch(`${config.baseUrl}/v1/video/result`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${config.apiKey}` },
+      body: JSON.stringify({ id })
+    });
+    if (!response.ok) { await new Promise(resolve => setTimeout(resolve, 5000)); continue; }
+    const result: GRSaiVideoResult = await response.json();
+    if (result.status === 'succeeded' && result.results?.length) return result.results[0].url;
+    if (result.status === 'failed') throw new Error(`GRSai 视频生成失败: ${result.failure_reason || result.error || '未知错误'}`);
+    await new Promise(resolve => setTimeout(resolve, 5000));
+  }
+  throw new Error('GRSai 视频生成超时');
+}
+
+export async function generateVideoWithGRSai(params: VideoGenParams, config: ApiConfig): Promise<string> {
+  const { id } = await submitGRSaiVideoTask(params, config);
+  return await waitForGRSaiVideo(id, config);
+}
+
+// ========== Wan 2.6 视频生成 ==========
+
+export async function generateVideoWithWan26(params: VideoGenParams, config: ApiConfig): Promise<string> {
+  const { prompt, firstFrameImage, lastFrameImage, referenceImages, aspectRatio = '16:9', duration = 5 } = params;
+  const alphaBaseUrl = 'https://openrouter.ai/api/alpha';
+  const model = config.model || 'alibaba/wan-2.6';
+
+  const requestBody: any = { model, prompt: prompt || '', aspect_ratio: aspectRatio, duration, resolution: '720p' };
+  const refImages: { type: string; image_url: { url: string } }[] = [];
+  if (firstFrameImage) refImages.push({ type: 'image_url', image_url: { url: firstFrameImage } });
+  if (lastFrameImage && refImages.length < 2) refImages.push({ type: 'image_url', image_url: { url: lastFrameImage } });
+  if (refImages.length === 0 && referenceImages?.length) refImages.push({ type: 'image_url', image_url: { url: referenceImages[0] } });
+  if (refImages.length) requestBody.input_references = refImages;
+
+  const submitResponse = await fetch(`${alphaBaseUrl}/videos`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${config.apiKey}`, 'HTTP-Referer': 'https://video-generator.app', 'X-Title': 'Video Generator' },
+    body: JSON.stringify(requestBody)
+  });
+  if (!submitResponse.ok) throw new Error(`Wan 2.6 提交失败: ${submitResponse.status} ${await submitResponse.text()}`);
+  const submitResult = await submitResponse.json();
+  if (submitResult.error) throw new Error(`Wan 2.6 错误: ${submitResult.error.message || JSON.stringify(submitResult.error)}`);
+  const pollingUrl: string = submitResult.polling_url;
+  if (!pollingUrl) throw new Error('Wan 2.6 返回缺少 polling_url');
+  return await waitForWan26Video(pollingUrl, config.apiKey);
+}
+
+async function waitForWan26Video(pollingUrl: string, apiKey: string, maxWaitMs = 600000): Promise<string> {
+  const startTime = Date.now();
+  while (Date.now() - startTime < maxWaitMs) {
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    const pollResponse = await fetch(pollingUrl, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'HTTP-Referer': 'https://video-generator.app', 'X-Title': 'Video Generator' }
+    });
+    if (!pollResponse.ok) continue;
+    const pollResult = await pollResponse.json();
+    if (pollResult.status === 'completed' && pollResult.unsigned_urls?.length) return pollResult.unsigned_urls[0];
+    if (['failed', 'cancelled', 'expired'].includes(pollResult.status)) throw new Error(`Wan 2.6 视频生成失败: ${pollResult.error || pollResult.status}`);
+  }
+  throw new Error('Wan 2.6 视频生成超时（超过 10 分钟）');
+}
+
+// ========== OpenRouter 视频生成 ==========
+
+export async function generateVideoWithOpenRouter(params: VideoGenParams, config: ApiConfig): Promise<string> {
+  const { prompt, firstFrameImage, referenceImages, aspectRatio = '16:9', duration = 10 } = params;
+  const baseUrl = config.baseUrl || 'https://openrouter.ai/api/v1';
+  const model = config.model || 'minimax/video-01';
+  
+  const requestBody: any = { model, messages: [{ role: 'user', content: prompt }], modalities: ['video'] };
+  if (firstFrameImage) requestBody.first_frame = firstFrameImage;
+  if (referenceImages?.length) requestBody.images = referenceImages;
+  if (duration) requestBody.duration = duration;
+  if (aspectRatio) requestBody.aspect_ratio = aspectRatio;
+  
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${config.apiKey}`, 'HTTP-Referer': 'https://video-generator.app', 'X-Title': 'Video Generator' },
+    body: JSON.stringify(requestBody)
+  });
+  if (!response.ok) throw new Error(`OpenRouter 视频API请求失败: ${response.status} ${await response.text()}`);
+  const result = await response.json();
+  if (result.error) throw new Error(`OpenRouter 错误: ${result.error.message || JSON.stringify(result.error)}`);
+  
+  const taskId = result.id || result.data?.id;
+  if (!taskId) {
+    if (result.data?.url) return result.data.url;
+    throw new Error('OpenRouter 返回缺少任务 ID');
+  }
+  return await waitForOpenRouterVideo(taskId, baseUrl, config.apiKey, duration);
+}
+
+async function waitForOpenRouterVideo(taskId: string, baseUrl: string, apiKey: string, maxWaitTime = 300000): Promise<string> {
+  const startTime = Date.now();
+  while (Date.now() - startTime < maxWaitTime) {
+    const response = await fetch(`${baseUrl}/video/generations/${taskId}`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'HTTP-Referer': 'https://video-generator.app', 'X-Title': 'Video Generator' }
+    });
+    if (!response.ok) { await new Promise(resolve => setTimeout(resolve, 5000)); continue; }
+    const result = await response.json();
+    if (result.status === 'completed' && result.data?.url) return result.data.url;
+    if (result.status === 'failed') throw new Error(`OpenRouter 视频生成失败: ${result.error?.message || '未知错误'}`);
+    await new Promise(resolve => setTimeout(resolve, 5000));
+  }
+  throw new Error('OpenRouter 视频生成超时');
+}
+
+// ========== 统一入口：根据 provider 自动路由 ==========
+
+/**
+ * 统一视频生成入口
+ * 根据 config.provider 自动选择对应的视频生成实现
+ * 支持 volcengine / grsai / openrouter (wan-2.6 / minimax)
+ */
+export async function generateVideo(
+  params: VideoGenParams,
+  config: ApiConfig
+): Promise<string> {
+  const provider = (config.provider || '').toLowerCase();
+  const model = (config.model || '').toLowerCase();
+  
+  console.log(`[generateVideo] provider=${provider}, model=${model}, prompt=${params.prompt?.substring(0, 50)}...`);
+  
+  // 明确处理每个 provider
+  switch (provider) {
+    case 'volcengine':
+    case 'volc':
+    case 'ark':
+      return generateVideoWithVolcEngine(params, config);
+    
+    case 'grsai':
+      return generateVideoWithGRSai(params, config);
+    
+    case 'openrouter':
+      if (model.includes('wan-2.6')) {
+        return generateVideoWithWan26(params, config);
+      }
+      return generateVideoWithOpenRouter(params, config);
+    
+    default:
+      throw new Error(`不支持的视频生成 provider: ${config.provider}。支持的 provider: volcengine, grsai, openrouter`);
+  }
+}
+
+// ========== 便捷方法（已重构为使用统一入口） ==========
+
+export async function generateVideoFromText(prompt: string, config: ApiConfig): Promise<string> {
+  return generateVideo({ prompt }, config);
+}
+
+export async function generateVideoFromImage(
+  prompt: string,
+  firstFrameImage: string,
+  config: ApiConfig
+): Promise<string> {
+  return generateVideo({ prompt, firstFrameImage }, config);
+}
+
+export async function generateVideoFromFirstLastFrame(
+  prompt: string,
+  firstFrameImage: string,
+  lastFrameImage: string,
+  config: ApiConfig
+): Promise<string> {
+  return generateVideo({ prompt, firstFrameImage, lastFrameImage }, config);
+}
+
+export async function generateVideoFromReferenceImages(
+  prompt: string,
+  referenceImages: string[],
+  config: ApiConfig
+): Promise<string> {
+  return generateVideo({ prompt, referenceImages }, config);
+}

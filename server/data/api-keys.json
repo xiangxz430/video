@@ -1,0 +1,20 @@
+{
+  "keys": [
+    {
+      "id": "b12d271d-9d45-4a11-ae6f-7b0efc5e5f3e",
+      "key": "vg_local_dev_key_1234567890abcdef",
+      "name": "默认密钥",
+      "createdAt": "2026-04-21T07:37:13.912Z",
+      "lastUsedAt": null,
+      "enabled": true
+    },
+    {
+      "id": "f50a1e63-1995-4f9b-bab8-ad27ced8aa96",
+      "key": "vg_7057869639e8d415a2fbb136b5df7eb2",
+      "name": "测试用户1",
+      "createdAt": "2026-04-27T06:43:20.032Z",
+      "lastUsedAt": "2026-04-27T10:59:03.651Z",
+      "enabled": true
+    }
+  ]
+}

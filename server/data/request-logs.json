@@ -1,0 +1,74 @@
+{
+  "logs": [
+    {
+      "id": "22a6c808-6355-4192-9766-5087f8a1f823",
+      "timestamp": "2026-04-21T09:53:26.629Z",
+      "method": "GET",
+      "endpoint": "/api/stats/usage",
+      "function": "other",
+      "provider": "unknown",
+      "model": "unknown",
+      "apiKeyMasked": "vg_loc****abcdef",
+      "statusCode": 200,
+      "duration": 18,
+      "error": null,
+      "requestSummary": ""
+    },
+    {
+      "id": "7ff3c08e-03b7-49bc-bcaa-3e88d4f01e78",
+      "timestamp": "2026-04-27T06:43:37.194Z",
+      "method": "GET",
+      "endpoint": "/api/stats/usage",
+      "function": "other",
+      "provider": "unknown",
+      "model": "unknown",
+      "apiKeyMasked": "vg_705****df7eb2",
+      "statusCode": 200,
+      "duration": 2,
+      "error": null,
+      "requestSummary": ""
+    },
+    {
+      "id": "2e3af0f0-7bb2-4a5d-832c-243158579289",
+      "timestamp": "2026-04-27T06:44:34.391Z",
+      "method": "POST",
+      "endpoint": "/api/image/generate",
+      "function": "image",
+      "provider": "grsai",
+      "model": "nano-banana-fast",
+      "apiKeyMasked": "vg_705****df7eb2",
+      "statusCode": 200,
+      "duration": 33760,
+      "error": null,
+      "requestSummary": "生成真人版本的现代大美女"
+    },
+    {
+      "id": "ef6cbd4a-ba2a-4ba9-bcd8-7bfbf40d5071",
+      "timestamp": "2026-04-27T11:00:49.315Z",
+      "method": "POST",
+      "endpoint": "/api/script/split",
+      "function": "script",
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "apiKeyMasked": "vg_705****df7eb2",
+      "statusCode": 200,
+      "duration": 105661,
+      "error": null,
+      "requestSummary": "\n---\n\n# 《双生》\n## 第一集《绝境重生》 时长：3分30秒\n\n---\n\n### 【S1】 现代办公室 · 黄昏 · 内景\n\n**画面：** 镜头从天花板缓慢下降，夕阳最后的光线割裂空间，一半"
+    },
+    {
+      "id": "e75f3771-719a-4383-8606-c85a70dac170",
+      "timestamp": "2026-04-27T12:39:17.175Z",
+      "method": "GET",
+      "endpoint": "/api/script/split",
+      "function": "script",
+      "provider": "deepseek",
+      "model": "unknown",
+      "apiKeyMasked": "vg_loc****abcdef",
+      "statusCode": 404,
+      "duration": 2,
+      "error": "HTTP 404",
+      "requestSummary": ""
+    }
+  ]
+}

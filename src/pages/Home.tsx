@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { invoke } from '@tauri-apps/api/core';
-import { generateImage, generateVideoWithVolcEngine, generateVideoWithGRSai, generateVideoWithOpenRouter } from '../services/aiService';
+import { generateImage, generateVideo } from '../services/serverApiClient';
 import { getApiConfig, getAllImageHistoryByDate, addGeneratedImageHistory, deleteGeneratedImageHistory, type GeneratedImageHistory, type ImageHistoryByDate, addHomeVideoHistory, getHomeVideoHistoryByDate, deleteHomeVideoHistory, importLocalVideosToHistory, type HomeVideoHistory, type VideoHistoryByDate } from '../services/database';
 import { uploadImage, saveUrlImage, localImageToBase64, isLocalFilePath, exportImageFile, downloadVideo, localVideoPathToSrc, scanLocalVideos } from '../services/fileService';
 import { useApp } from '../context/AppContext';
@@ -64,6 +64,7 @@ const Home: React.FC = () => {
   const [selectedVideoModel, setSelectedVideoModel] = useState('doubao-seedance-1-5-pro-251215');
   const [selectedVideoResolution, setSelectedVideoResolution] = useState('1080');
   const [selectedVideoDuration, setSelectedVideoDuration] = useState(5);
+  const [selectedVideoAspectRatio, setSelectedVideoAspectRatio] = useState('16:9');
   const [enableVideoAudio, setEnableVideoAudio] = useState(false); // 默认无声视频，节省一半费用
   const [firstFrameImage, setFirstFrameImage] = useState<string | null>(null);
   const [lastFrameImage, setLastFrameImage] = useState<string | null>(null);
@@ -268,11 +269,11 @@ const Home: React.FC = () => {
       addImageLog('📤 发送请求...');
       const imageUrl = await generateImage({
         prompt: imagePrompt,
+        provider: modelInfo?.provider,
         model: selectedImageModel,
-        size: selectedImageSize,
         aspectRatio: selectedAspectRatio,
         referenceImage
-      }, imageConfig);
+      });
 
       addImageLog('✅ 图片生成成功!');
       addImageLog(`🔗 ${imageUrl}`);
@@ -410,40 +411,21 @@ const Home: React.FC = () => {
         preparedRefImages = processedImages.filter((img): img is string => img !== undefined);
       }
 
-      addVideoLog('📤 发送请求...');
+      addVideoLog('📤 发送请求到服务端...');
       addVideoLog(`🔊 音频模式: ${enableVideoAudio ? '有声' : '无声（节省一半费用）'}`);
-      // 根据模型选择不同的API
-      let videoUrl: string;
-      if (provider === 'grsai') {
-        addVideoLog('🔧 使用 GRSai API');
-        videoUrl = await generateVideoWithGRSai({
-          prompt: videoPrompt,
-          firstFrameImage: preparedFirstFrame,
-          referenceImages: preparedRefImages,
-          aspectRatio: selectedAspectRatio,
-          duration: selectedVideoDuration
-        }, configWithModel);
-      } else if (provider === 'openrouter') {
-        addVideoLog('🔧 使用 OpenRouter API');
-        videoUrl = await generateVideoWithOpenRouter({
-          prompt: videoPrompt,
-          firstFrameImage: preparedFirstFrame,
-          referenceImages: preparedRefImages,
-          aspectRatio: selectedAspectRatio,
-          duration: selectedVideoDuration
-        }, configWithModel);
-      } else {
-        addVideoLog('🔧 使用火山方舟 API');
-        videoUrl = await generateVideoWithVolcEngine({
-          prompt: videoPrompt,
-          firstFrameImage: preparedFirstFrame,
-          lastFrameImage: preparedLastFrame,
-          referenceImages: preparedRefImages,
-          aspectRatio: selectedAspectRatio,
-          duration: selectedVideoDuration,
-          enableAudio: enableVideoAudio
-        }, configWithModel);
-      }
+      
+      const videoModelInfo = enabledVideoModels.find(m => m.id === selectedVideoModel);
+      const videoUrl = await generateVideo({
+        prompt: videoPrompt,
+        provider: videoModelInfo?.provider,
+        model: selectedVideoModel,
+        firstFrameImage: preparedFirstFrame,
+        lastFrameImage: preparedLastFrame,
+        referenceImages: preparedRefImages,
+        aspectRatio: selectedVideoAspectRatio,
+        duration: selectedVideoDuration,
+        enableAudio: enableVideoAudio
+      });
 
       addVideoLog('✅ 视频生成成功!');
       addVideoLog(`🔗 远程URL: ${videoUrl}`);
@@ -828,6 +810,16 @@ const Home: React.FC = () => {
               >
                 {((enabledVideoModels.find(m => m.id === selectedVideoModel) as any)?.durations || [5, 10]).map((dur: number) => (
                   <option key={dur} value={dur}>{dur}s</option>
+                ))}
+              </select>
+              {/* 宽高比选择 */}
+              <select
+                value={selectedVideoAspectRatio}
+                onChange={(e) => setSelectedVideoAspectRatio(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              >
+                {ASPECT_RATIOS.map(r => (
+                  <option key={r.id} value={r.id}>{r.name}</option>
                 ))}
               </select>
               {/* 声音选择 */}

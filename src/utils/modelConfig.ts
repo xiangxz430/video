@@ -90,7 +90,8 @@ export function getProviderDisplayName(provider: string): string {
     'openrouter': 'OpenRouter',
     'grsai': 'Grsai',
     'anthropic': 'Anthropic',
-    'dashscope': '通义千问'
+    'dashscope': '通义千问',
+    'tokenplan': '百炼TokenPlan'
   };
   return providerMap[provider] || provider;
 }
@@ -146,6 +147,7 @@ function getModelDisplayName(provider: string, modelId: string): string {
     'nano-banana-3': 'Nano-Banana-3 (Gemini 3.1 Flash)',
     'grsai-sora-2': 'Sora2',
     // DeepSeek
+    'deepseek-v4-pro': 'DeepSeek-V4-Pro',
     'deepseek-chat': 'DeepSeek-Chat',
     // IdeaLab
     'qwen_max': 'Qwen-Max',
@@ -169,6 +171,15 @@ function getModelDisplayName(provider: string, modelId: string): string {
     'google/veo-3.1': 'Veo 3.1 (alpha)',
     'bytedance/seedance-1.5-pro': 'Seedance 1.5 Pro (alpha)',
     'minimax/video-01': 'MiniMax Video 01',
+    // Token Plan (百炼包月)
+    'qwen3.6-plus': 'Qwen3.6-Plus',
+    'glm-5': 'GLM-5',
+    'MiniMax-M2.5': 'MiniMax-M2.5',
+    'deepseek-v3.2': 'DeepSeek-V3.2',
+    'qwen-image-2.0': 'Qwen-Image-2.0',
+    'qwen-image-2.0-pro': 'Qwen-Image-2.0-Pro',
+    'wan2.7-image': 'Wan2.7-Image',
+    'wan2.7-image-pro': 'Wan2.7-Image-Pro',
   };
   
   return displayNameMap[modelId] || modelId;
@@ -288,6 +299,21 @@ export function getModelDescription(provider: string, modelId: string): string {
     return 'IdeaLab-国内稳定';
   }
   
+  // Token Plan (百炼包月)
+  if (provider === 'tokenplan') {
+    const tpDesc: Record<string, string> = {
+      'qwen3.6-plus': 'TP-Qwen3.6',
+      'glm-5': 'TP-GLM-5',
+      'MiniMax-M2.5': 'TP-MiniMax',
+      'deepseek-v3.2': 'TP-DeepSeek',
+      'qwen-image-2.0': 'TP-图片快速',
+      'qwen-image-2.0-pro': 'TP-图片高清',
+      'wan2.7-image': 'TP-Wan图片',
+      'wan2.7-image-pro': 'TP-Wan高清',
+    };
+    return tpDesc[modelId] || '百炼TokenPlan';
+  }
+  
   return provider;
 }
 
@@ -349,6 +375,21 @@ export function getModelPrice(provider: string, modelId: string): string | undef
       'minimax/video-01': '$0.10/秒',
     };
     return orPrice[modelId];
+  }
+  
+  // Token Plan (百炼包月) - Credits 折算
+  if (provider === 'tokenplan') {
+    const tpPrice: Record<string, string> = {
+      'qwen3.6-plus': '包月-Credits',
+      'glm-5': '包月-Credits',
+      'MiniMax-M2.5': '包月-Credits',
+      'deepseek-v3.2': '包月-Credits',
+      'qwen-image-2.0': '包月-Credits',
+      'qwen-image-2.0-pro': '包月-Credits',
+      'wan2.7-image': '包月-Credits',
+      'wan2.7-image-pro': '包月-Credits',
+    };
+    return tpPrice[modelId];
   }
   
   return undefined;
@@ -427,9 +468,10 @@ export function getBestConfig(
   if (!apiConfigs || apiConfigs.length === 0) return null;
 
   if (capability === 'scriptGeneration') {
-    // 剧本/分镜生成：优先 DeepSeek-Chat（快，稳定）→ DeepSeek-Reasoner（备选）→ 旧配置
+    // 剧本/分镜生成：优先 DeepSeek-V4-Pro（最新旗舰）→ DeepSeek-Chat（快，稳定）→ DeepSeek-Reasoner（备选）→ 旧配置
     const fallbacks = [
-      'deepseek_scriptGeneration_deepseek-chat',       // ← 优先使用 chat（快，稳定）
+      'deepseek_scriptGeneration_deepseek-v4-pro',     // ← 优先使用 V4 Pro（最新旗舰模型）
+      'deepseek_scriptGeneration_deepseek-chat',       // ← chat（快，稳定）
       'deepseek_scriptGeneration_deepseek-reasoner',   // ← reasoner 作为备选
       'scriptGeneration',
     ];

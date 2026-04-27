@@ -5,13 +5,75 @@ import CharacterCard from '../components/CharacterCard';
 import SceneCard from '../components/SceneCard';
 import SceneEditModal from '../components/SceneEditModal';
 import CharacterEditModal from '../components/CharacterEditModal';
-import { generateImageWithVolcEngine, ImageGenParams, buildCharacterPrompt } from '../services/aiService';
+import { generateImage, ImageGenParams, buildCharacterPrompt } from '../services/aiService';
 import { saveUrlImage, localPathToSrc } from '../services/fileService';
 import { getApiConfig, saveImageHistory, addGeneratedImageHistory } from '../services/database';
 import type { Character, Scene } from '../types';
 
 // 图片生成模式
 type ImageGenMode = 'text' | 'image-ref';
+
+// 将 AI 拆分返回的结构化 JSON 描述转为自然语言图片 prompt
+// 同时截断过长的描述以避免超过图片 API 的 prompt 长度限制
+function descriptionToPrompt(description: string, maxLen: number = 500): string {
+  let result: string;
+  try {
+    const obj = JSON.parse(description);
+    if (typeof obj !== 'object' || obj === null) {
+      result = description;
+    } else if (obj['人物与服饰']) {
+      // 处理角色描述
+      const char = obj['人物与服饰'];
+      const parts: string[] = [];
+      if (char['基本信息']) parts.push(char['基本信息']);
+      if (char['面部特征']) parts.push('面部特征：' + char['面部特征']);
+      if (char['发型发色']) parts.push('发型发色：' + char['发型发色']);
+      if (char['服装穿着']) parts.push('服装：' + char['服装穿着']);
+      if (char['配饰道具']) parts.push('配饰：' + char['配饰道具']);
+      if (char['气质神态']) parts.push('气质神态：' + char['气质神态']);
+      if (char['姿态动作']) parts.push('姿态：' + char['姿态动作']);
+      if (obj['渲染精度']?.['画面表现']) {
+        parts.push('画质要求：' + obj['渲染精度']['画面表现']);
+      }
+      result = parts.join('；');
+    } else if (obj['场景与光效']) {
+      // 处理场景描述
+      const scene = obj['场景与光效'];
+      const parts: string[] = [];
+      if (scene['设计风格']) parts.push(scene['设计风格']);
+      if (scene['地点']) parts.push(scene['地点']);
+      if (scene['时间']) parts.push('时间：' + scene['时间']);
+      if (scene['环境光']) parts.push('光线：' + scene['环境光']);
+      if (scene['光影品质']) parts.push('光影：' + scene['光影品质']);
+      if (obj['渲染精度']?.['画面表现']) {
+        parts.push('画质要求：' + obj['渲染精度']['画面表现']);
+      }
+      result = parts.join('；');
+    } else {
+      // 无法识别结构，提取所有字符串值
+      const values: string[] = [];
+      for (const [key, val] of Object.entries(obj)) {
+        if (typeof val === 'string') values.push(val);
+        else if (typeof val === 'object' && val !== null) {
+          for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+            if (typeof v === 'string' && v.length > 5) values.push(v);
+          }
+        }
+      }
+      result = values.length > 0 ? values.join('；') : description;
+    }
+  } catch {
+    result = description;
+  }
+  
+  // 截断保护：布局指令约 300 字符，描述控制在 maxLen 内，确保总 prompt ≤ 800
+  if (result.length > maxLen) {
+    const cutPoint = result.lastIndexOf('；', maxLen);
+    result = cutPoint > maxLen / 2 ? result.substring(0, cutPoint) : result.substring(0, maxLen);
+    console.log(`[descriptionToPrompt] 描述过长(${result.length}→${maxLen})，已截断`);
+  }
+  return result;
+}
 
 const CharactersAndScenes: React.FC = () => {
   const navigate = useNavigate();
@@ -137,17 +199,23 @@ const CharactersAndScenes: React.FC = () => {
         const char = ungenerated[i];
         setBatchProgress({ current: i + 1, total: ungenerated.length });
         try {
-          // 角色图提示词（使用统一构建函数）
-          const characterPrompt = buildCharacterPrompt(char.description);
+          // 角色图提示词：先将 JSON 描述转为自然语言，再拼布局要求
+          const cleanDesc = descriptionToPrompt(char.description);
+          const characterPrompt = buildCharacterPrompt(cleanDesc);
+          console.log(`[角色] ${char.name} prompt长度: ${characterPrompt.length}, 原始描述长度: ${char.description.length}`);
           
           const params: ImageGenParams = { 
             prompt: characterPrompt,
-            size: '2K'  // 默认使用 2K 分辨率
+            size: '2K',  // 默认使用 2K 分辨率
+            provider: imageConfig.provider,  // 透传用户在客户端配置的图片提供商
+            model: imageConfig.model
           };
           if (imageGenMode === 'image-ref' && char.imageUrl) {
             params.referenceImage = char.imageUrl;
           }
-          const imageUrl = await generateImageWithVolcEngine(params, imageConfig);
+          // 页面日志：显示当前生成进度
+          setBatchError(`🔄 正在为「${char.name}」生成图片...`);
+          const imageUrl = await generateImage(params);
           console.log(`角色 ${char.name} 图片生成成功:`, imageUrl);
           
           try {
@@ -168,10 +236,12 @@ const CharactersAndScenes: React.FC = () => {
             }
           } catch (saveError: any) {
             console.error(`角色 ${char.name} 图片保存失败:`, saveError.message);
-            // 保存失败但生成成功，继续处理下一个
+            setBatchError(`⚠️ ${char.name} 图片保存失败: ${saveError.message}`);
           }
-        } catch (err) {
+        } catch (err: any) {
+          const errMsg = err?.message || err?.toString() || '未知错误';
           console.error(`Failed to generate image for ${char.name}:`, err);
+          setBatchError(`❌ ${char.name} 生成失败: ${errMsg}`);
         }
       }
       
@@ -207,8 +277,9 @@ const CharactersAndScenes: React.FC = () => {
         const scene = ungenerated[i];
         setBatchProgress({ current: i + 1, total: ungenerated.length });
         try {
-          // 场景图专用提示词：专业电影级场景图（纯环境，无人物）
-          const scenePrompt = `电影级场景概念图，${scene.description}。
+          // 场景图提示词：先将 JSON 描述转为自然语言，再拼布局要求
+          const cleanSceneDesc = descriptionToPrompt(scene.description);
+          const scenePrompt = `电影级场景概念图，${cleanSceneDesc}。
 画面要求：
 1. 展现场景的全貌和空间层次感
 2. 清晰呈现建筑结构、环境布局、主要物体位置
@@ -217,15 +288,20 @@ const CharactersAndScenes: React.FC = () => {
 5. 画面构图专业，具有电影画面的视觉张力
 【重要】画面中绝对不能出现任何人物、角色、人形生物，只展示纯粹的环境、建筑、自然景观
 风格：影视级场景概念图，高清细腻，透视准确，细节丰富，无人物`;
+          console.log(`[场景] ${scene.name} prompt长度: ${scenePrompt.length}, 原始描述长度: ${scene.description.length}`);
           
           const params: ImageGenParams = { 
             prompt: scenePrompt,
-            size: '2K'  // 默认使用 2K 分辨率
+            size: '2K',  // 默认使用 2K 分辨率
+            provider: imageConfig.provider,  // 透传用户在客户端配置的图片提供商
+            model: imageConfig.model
           };
           if (imageGenMode === 'image-ref' && scene.imageUrl) {
             params.referenceImage = scene.imageUrl;
           }
-          const imageUrl = await generateImageWithVolcEngine(params, imageConfig);
+          // 页面日志：显示当前生成进度
+          setBatchError(`🔄 正在为「${scene.name}」生成场景图...`);
+          const imageUrl = await generateImage(params);
           console.log(`场景 ${scene.name} 图片生成成功:`, imageUrl);
           
           try {
@@ -246,10 +322,12 @@ const CharactersAndScenes: React.FC = () => {
             }
           } catch (saveError: any) {
             console.error(`场景 ${scene.name} 图片保存失败:`, saveError.message);
-            // 保存失败但生成成功，继续处理下一个
+            setBatchError(`⚠️ ${scene.name} 场景图保存失败: ${saveError.message}`);
           }
-        } catch (err) {
+        } catch (err: any) {
+          const errMsg = err?.message || err?.toString() || '未知错误';
           console.error(`Failed to generate image for ${scene.name}:`, err);
+          setBatchError(`❌ ${scene.name} 场景图生成失败: ${errMsg}`);
         }
       }
       

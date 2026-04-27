@@ -5,6 +5,18 @@ import { fetch } from '@tauri-apps/plugin-http';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { invoke } from '@tauri-apps/api/core';
 
+// 页面调试框日志回调（由页面组件设置）
+let pageLogCallback: ((log: string) => void) | null = null;
+
+export function setPageLogCallback(cb: ((log: string) => void) | null) {
+  pageLogCallback = cb;
+}
+
+// 记录日志到页面调试框
+function pageLog(log: string) {
+  pageLogCallback?.(log);
+}
+
 // 确保图片目录存在
 async function ensureImagesDir(): Promise<string> {
   const appData = await appDataDir();
@@ -230,9 +242,11 @@ export async function saveUrlImage(url: string, subfolder?: string): Promise<str
     console.log('saveUrlImage: 文件写入成功，大小:', bytes.length);
     return destPath;
   } catch (error: any) {
+    const errMsg = error?.message || String(error);
     console.error('saveUrlImage: 保存失败:', error);
-    console.error('saveUrlImage: 错误详情:', error?.message || String(error));
-    throw error;
+    pageLog(`[文件服务] 图片下载失败: ${errMsg}，使用远程URL作为fallback`);
+    // 下载失败时返回远程 URL 作为 fallback
+    return url;
   }
 }
 
@@ -471,9 +485,11 @@ export async function downloadVideo(videoUrl: string, subfolder?: string): Promi
     console.log('downloadVideo: 文件写入成功，大小:', bytes.length);
     return destPath;
   } catch (error: any) {
+    const errMsg = error?.message || String(error);
     console.error('downloadVideo: 下载视频失败:', error);
-    console.error('downloadVideo: 错误详情:', error?.message || String(error));
-    throw error;
+    pageLog(`[文件服务] 视频下载失败: ${errMsg}，使用远程URL作为fallback`);
+    // 下载失败时返回远程 URL 作为 fallback
+    return videoUrl;
   }
 }
 

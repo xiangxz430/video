@@ -174,9 +174,6 @@ const SceneEditModal: React.FC<SceneEditModalProps> = ({ scene, onClose, onSave 
       }
       addLog(`📤 发送请求到 ${apiName}...`);
       
-      // 获取选中的模型信息
-      const selectedModelInfo = availableModels.find(m => m.id === selectedModel);
-      
       // configWithModel 已包含正确的 provider 和 model
       const configWithModel = imageConfig;
       

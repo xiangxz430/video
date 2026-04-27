@@ -56,11 +56,16 @@ echo "-------------------------------------------"
 cd "$PROJECT_DIR"
 npm run build
 
-if [ ! -f "$BUILD_DIR/bundle.js" ]; then
-  echo "❌ Webpack 构建失败，未找到 bundle.js"
+BUNDLE_FILE=$(find "$BUILD_DIR" -maxdepth 1 -name 'bundle.*.js' -type f | head -1)
+if [ -z "$BUNDLE_FILE" ]; then
+  BUNDLE_FILE="$BUILD_DIR/bundle.js"
+fi
+if [ ! -f "$BUNDLE_FILE" ]; then
+  echo "❌ Webpack 构建失败，未找到 bundle 文件"
+  ls -la "$BUILD_DIR/" 2>/dev/null
   exit 1
 fi
-echo "✅ 前端构建完成: $BUILD_DIR/bundle.js"
+echo "✅ 前端构建完成: $BUNDLE_FILE"
 
 # ========== 步骤 4: Tauri 构建 ==========
 echo ""
@@ -129,15 +134,6 @@ cp -R "$APP_BUNDLE" "$OUTPUT_PATH"
 echo ""
 echo "=========================================="
 echo "✅ 构建完成!"
-echo "=========================================="
-echo "版本: $VERSION"
-echo "交付物: $OUTPUT_PATH"
-echo "大小: $(du -sh "$OUTPUT_PATH" | cut -f1)"
-echo "=========================================="
-echo "=========================================="
-echo "版本: $VERSION"
-echo "交付物: $OUTPUT_PATH"
-echo "大小: $(du -sh "$OUTPUT_PATH" | cut -f1)"
 echo "=========================================="
 echo "=========================================="
 echo "版本: $VERSION"

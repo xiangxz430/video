@@ -4,7 +4,7 @@ import { useApp } from '../context/AppContext';
 import AssetLibrary from '../components/AssetLibrary';
 import ScriptEditor from '../components/ScriptEditor';
 
-import { generateVideo, VideoGenParams, generateImage, ImageGenParams, generateStoryboardScript, buildCharacterPrompt, buildScenePrompt, extractEpisodesFromScript } from '../services/aiService';
+import { generateVideo, VideoGenParams, generateImage, ImageGenParams, generateStoryboardScript, buildCharacterPrompt, buildScenePrompt } from '../services/aiService';
 import { checkFFmpeg, mergeVideos } from '../services/videoService';
 import { downloadVideo, localVideoPathToSrc, saveUrlImage, localPathToSrc, localImageToBase64, isLocalFilePath, uploadImage } from '../services/fileService';
 import { saveImageHistory, getImageHistory, ImageHistory, getScript, getGeneratedImageHistory, getAllImageHistoryByDate, addGeneratedImageHistory, GeneratedImageHistory, ImageHistoryByDate, saveEpisodeCharacterOutfit, getEpisodeCharacterOutfits, deleteSegment as dbDeleteSegment, createSegment as dbCreateSegment, getSegmentsByEpisode, getScenesByScript, getCharactersByScript } from '../services/database';
@@ -2494,9 +2494,9 @@ const EpisodeEdit: React.FC = () => {
         episodeContent, 
         charData, 
         sceneData, 
-        apiConfig, 
+        undefined, 
         handleProgress,
-        handleContentStream  // 传递流式回调
+        handleContentStream
       );
       
       console.log(`[重新生成分镜] AI 返回了 ${storyboard.length} 个镜头`);
@@ -3086,7 +3086,7 @@ const EpisodeEdit: React.FC = () => {
                       className="cursor-pointer border-2 border-transparent hover:border-primary rounded-lg overflow-hidden transition"
                     >
                       <img 
-                        src={`asset://localhost/${item.localPath}`}
+                        src={localPathToSrc(item.localPath) || ''}
                         alt={item.prompt || '历史图片'}
                         className="w-full aspect-video object-cover"
                       />

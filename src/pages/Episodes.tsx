@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import EpisodeCard from '../components/EpisodeCard';
-import { generateStoryboardScript, extractEpisodesFromScript } from '../services/aiService';
+import { generateStoryboardScript } from '../services/aiService';
+import { splitScript } from '../services/serverApiClient';
 import { getScript, updateEpisode as dbUpdateEpisode, getEpisodesByScript, setPageLogCallback, getSegmentsByEpisode as dbGetSegmentsByEpisode } from '../services/database';
 import { getEnabledModels, getModelDisplayText, findApiConfigForModel, getBestConfig } from '../utils/modelConfig';
 import { parseSegmentContent } from '../utils/segmentUtils';
@@ -11,7 +12,7 @@ import type { Episode, ApiConfig } from '../types';
 
 const Episodes: React.FC = () => {
   const navigate = useNavigate();
-  const { currentScript, episodes, characters, scenes, apiConfigs, loadEpisodes, updateEpisode, createSegment, deleteSegment } = useApp();
+  const { currentScript, episodes, characters, scenes, apiConfigs, loadEpisodes, createEpisode, updateEpisode, createSegment, deleteSegment } = useApp();
   const [generatingEpisodeId, setGeneratingEpisodeId] = useState<number | null>(null);
   const [generatingStep, setGeneratingStep] = useState(0); // 0=分析, 1=匹配, 2=生成
   const [generatingDetails, setGeneratingDetails] = useState<string[]>([]); // 详细步骤说明
@@ -90,7 +91,8 @@ const Episodes: React.FC = () => {
       // 使用统一配置获取（自动多级回退）
       let finalConfig: any = null;
       if (selectedModelKey) {
-        const modelId = selectedModelKey.split('_').slice(1).join('_');
+        const underscoreIdx = selectedModelKey.indexOf('_');
+        const modelId = underscoreIdx >= 0 ? selectedModelKey.substring(underscoreIdx + 1) : selectedModelKey;
         finalConfig = findApiConfigForModel(apiConfigs, modelId);
       }
       if (!finalConfig?.apiKey) {
@@ -311,7 +313,7 @@ const Episodes: React.FC = () => {
       const newEpNum = maxEpNum + 1;
 
       // 2. 创建新的 episode
-      const newEpisodeId = await useApp().createEpisode({
+      const newEpisodeId = await createEpisode({
         title: newEpisodeTitle,
         episodeNumber: newEpNum,
         content: newEpisodeContent,
@@ -336,7 +338,8 @@ const Episodes: React.FC = () => {
       // 使用统一配置获取
       let finalConfig: any = null;
       if (selectedModelKey) {
-        const modelId = selectedModelKey.split('_').slice(1).join('_');
+        const underscoreIdx = selectedModelKey.indexOf('_');
+        const modelId = underscoreIdx >= 0 ? selectedModelKey.substring(underscoreIdx + 1) : selectedModelKey;
         finalConfig = findApiConfigForModel(apiConfigs, modelId);
       }
       if (!finalConfig?.apiKey) {
@@ -378,7 +381,7 @@ const Episodes: React.FC = () => {
       // 7. 保存分镜到数据库
       let orderIndex = 0;
       for (const shot of storyboard) {
-        await useApp().createSegment({
+        await createSegment({
           episodeId: newEpisodeId,
           startTime: 0,
           endTime: shot.duration || DEFAULT_SHOT_DURATION,
@@ -459,29 +462,19 @@ const Episodes: React.FC = () => {
       setReSplitLogs(prev => [...prev, `[OK] 剧本长度: ${scriptData.content.length} 字符`]);
       setReSplitLogs(prev => [...prev, `[OK] 当前分集数: ${episodes.length}`]);
 
-      setReSplitProgress('正在调用 AI 重新分集...');
+      setReSplitProgress('正在请求服务端重新分集...');
 
-      // 使用统一配置获取（自动处理多级回退：DeepSeek-Reasoner → DeepSeek-Chat → 旧配置）
-      const apiConfig = getBestConfig(apiConfigs, 'scriptGeneration');
-
-      setReSplitLogs(prev => [...prev, `[调试] 使用配置: ${apiConfig?.provider} - ${apiConfig?.model}`]);
+      setReSplitLogs(prev => [...prev, '[OK] 请求服务端拆分剧本']);
       
-      if (!apiConfig || !apiConfig.apiKey) {
-        setReSplitLogs(prev => [...prev, '[错误] 未配置 API Key！']);
-        alert('请先在设置页面配置剧本生成 API Key');
-        setReSplitting(false);
-        return;
-      }
-
       // 先获取当前分集数量，作为参考
       const currentEpisodeCount = episodes.length || 3;
-      setReSplitLogs(prev => [...prev, `[OK] 请求 AI 将剧本拆分为 ${currentEpisodeCount} 集`]);
+      setReSplitLogs(prev => [...prev, `[OK] 请求将剧本拆分为 ${currentEpisodeCount} 集`]);
       
-      const episodesWithContent = await extractEpisodesFromScript(
-        scriptData.content,
-        currentEpisodeCount,
-        apiConfig
-      );
+      const splitResult = await splitScript({
+        script: scriptData.content,
+        episodeCount: currentEpisodeCount
+      });
+      const episodesWithContent = splitResult.episodes;
 
       if (!episodesWithContent || episodesWithContent.length === 0) {
         setReSplitLogs(prev => [...prev, '[错误] AI 返回为空！']);

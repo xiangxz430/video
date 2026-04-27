@@ -299,6 +299,9 @@ async function createTables(): Promise<void> {
   
   // 迁移：更新旧的 OpenRouter 模型 ID
   await migrateOpenRouterModelIds();
+  
+  // 迁移：插入 DeepSeek V4 Pro 配置（如不存在）
+  await migrateDeepSeekV4Pro();
 }
 
 // 初始化默认 API 配置
@@ -328,6 +331,7 @@ async function initDefaultApiConfigs(): Promise<void> {
     // Grsai - 视频生成
     { name: 'grsai_videoGeneration_grsai-sora-2', provider: 'grsai', apiKey: 'sk-31428f6c42e242a7b0ac10581c4ed017', model: 'grsai-sora-2', baseUrl: 'https://grsai.dakka.com.cn' },
     // DeepSeek
+    { name: 'deepseek_scriptGeneration_deepseek-v4-pro', provider: 'deepseek', apiKey: 'sk-2b253d4e956642d8a100d94a4db56b11', model: 'deepseek-v4-pro', baseUrl: 'https://api.deepseek.com/v1' },
     { name: 'deepseek_scriptGeneration_deepseek-chat', provider: 'deepseek', apiKey: 'sk-2b253d4e956642d8a100d94a4db56b11', model: 'deepseek-chat', baseUrl: 'https://api.deepseek.com/v1' },
     { name: 'deepseek_scriptGeneration_deepseek-reasoner', provider: 'deepseek', apiKey: 'sk-2b253d4e956642d8a100d94a4db56b11', model: 'deepseek-reasoner', baseUrl: 'https://api.deepseek.com/v1' },
     // IdeaLab
@@ -348,7 +352,20 @@ async function initDefaultApiConfigs(): Promise<void> {
     { name: 'imageGeneration_openrouter_bytedance-seed/seedream-4.5', provider: 'openrouter', apiKey: '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', model: 'bytedance-seed/seedream-4.5', baseUrl: 'https://openrouter.ai/api/v1' },
     // OpenRouter - 视频生成 (Alpha)
     { name: 'videoGeneration_openrouter_openai/sora-2-pro', provider: 'openrouter', apiKey: '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', model: 'openai/sora-2-pro', baseUrl: 'https://openrouter.ai/api/v1' },
-    { name: 'videoGeneration_openrouter_google/veo-3.1', provider: 'openrouter', apiKey: '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', model: 'google/veo-3.1', baseUrl: 'https://openrouter.ai/api/v1' }
+    { name: 'videoGeneration_openrouter_google/veo-3.1', provider: 'openrouter', apiKey: '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', model: 'google/veo-3.1', baseUrl: 'https://openrouter.ai/api/v1' },
+    // Token Plan (百炼包月) - 文本生成
+    { name: 'tokenplan_scriptGeneration_qwen3.6-plus', provider: 'tokenplan', apiKey: 'sk-e4e03e38190d45d1b6d5b2b2da9515df', model: 'qwen3.6-plus', baseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1' },
+    { name: 'tokenplan_scriptGeneration_glm-5', provider: 'tokenplan', apiKey: 'sk-e4e03e38190d45d1b6d5b2b2da9515df', model: 'glm-5', baseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1' },
+    { name: 'tokenplan_scriptGeneration_MiniMax-M2.5', provider: 'tokenplan', apiKey: 'sk-e4e03e38190d45d1b6d5b2b2da9515df', model: 'MiniMax-M2.5', baseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1' },
+    { name: 'tokenplan_scriptGeneration_deepseek-v3.2', provider: 'tokenplan', apiKey: 'sk-e4e03e38190d45d1b6d5b2b2da9515df', model: 'deepseek-v3.2', baseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1' },
+    // Token Plan (百炼包月) - 图片生成
+    { name: 'tokenplan_imageGeneration_qwen-image-2.0', provider: 'tokenplan', apiKey: 'sk-e4e03e38190d45d1b6d5b2b2da9515df', model: 'qwen-image-2.0', baseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1' },
+    { name: 'tokenplan_imageGeneration_qwen-image-2.0-pro', provider: 'tokenplan', apiKey: 'sk-e4e03e38190d45d1b6d5b2b2da9515df', model: 'qwen-image-2.0-pro', baseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1' },
+    { name: 'tokenplan_imageGeneration_wan2.7-image', provider: 'tokenplan', apiKey: 'sk-e4e03e38190d45d1b6d5b2b2da9515df', model: 'wan2.7-image', baseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1' },
+    { name: 'tokenplan_imageGeneration_wan2.7-image-pro', provider: 'tokenplan', apiKey: 'sk-e4e03e38190d45d1b6d5b2b2da9515df', model: 'wan2.7-image-pro', baseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1' },
+    // 服务端配置
+    { name: 'server_url', provider: 'server', apiKey: 'http://localhost:3000', model: 'default', baseUrl: null },
+    { name: 'server_api_key', provider: 'server', apiKey: '', model: 'default', baseUrl: null },
   ];
   
   for (const config of defaultConfigs) {
@@ -403,6 +420,29 @@ async function migrateOpenRouterModelIds(): Promise<void> {
     } catch (e) {
       console.error('Failed to migrate model:', update.oldModel, e);
     }
+  }
+}
+
+// 迁移：插入 DeepSeek V4 Pro 配置（如不存在）
+async function migrateDeepSeekV4Pro(): Promise<void> {
+  if (!db) return;
+  
+  const configName = 'deepseek_scriptGeneration_deepseek-v4-pro';
+  try {
+    const existing = await db.select<{ count: number }[]>(
+      `SELECT COUNT(*) as count FROM api_configs WHERE name = ?`,
+      [configName]
+    );
+    
+    if (existing[0]?.count === 0) {
+      await db.execute(
+        `INSERT INTO api_configs (name, provider, api_key, model, base_url) VALUES (?, ?, ?, ?, ?)`,
+        [configName, 'deepseek', 'sk-2b253d4e956642d8a100d94a4db56b11', 'deepseek-v4-pro', 'https://api.deepseek.com/v1']
+      );
+      console.log('Migrated: added DeepSeek V4 Pro config');
+    }
+  } catch (e) {
+    console.error('Failed to migrate DeepSeek V4 Pro:', e);
   }
 }
 
@@ -948,60 +988,41 @@ export async function getApiConfig(name: string, maxRetries: number = 3): Promis
 export async function updateApiConfig(name: string, config: Partial<ApiConfig>): Promise<void> {
   if (!db) throw new Error('Database not initialized');
   
-  // 先检查记录是否存在
+  // 使用 INSERT OR REPLACE 确保幂等性（原子操作，避免先查后插的并发问题）
+  // name 列有 UNIQUE 约束，INSERT OR REPLACE 会在冲突时替换整行
+  const provider = config.provider || '';
+  const apiKey = config.apiKey || '';
+  const model = config.model || '';
+  const baseUrl = config.baseUrl || null;
+  const description = config.description || null;
+  
+  // 如果是更新操作（已有记录），需要保留未指定的字段
+  // 先获取已有记录的值作为默认值
   const existing = await db.select<any[]>(
-    `SELECT id FROM api_configs WHERE name = ?`,
+    `SELECT provider, api_key, model, base_url, description FROM api_configs WHERE name = ?`,
     [name]
   );
   
-  if (existing.length === 0) {
-    // 记录不存在，执行 INSERT
-    const provider = config.provider || '';
-    const apiKey = config.apiKey || '';
-    const model = config.model || '';
-    const baseUrl = config.baseUrl || null;
-    const description = config.description || null;
+  if (existing.length > 0) {
+    // 已有记录，合并更新：未指定的字段保留原值
+    const row = existing[0];
+    const finalProvider = config.provider !== undefined ? config.provider : row.provider;
+    const finalApiKey = config.apiKey !== undefined ? config.apiKey : row.api_key;
+    const finalModel = config.model !== undefined ? config.model : row.model;
+    const finalBaseUrl = config.baseUrl !== undefined ? config.baseUrl : row.base_url;
+    const finalDescription = config.description !== undefined ? config.description : row.description;
+    
     await db.execute(
-      `INSERT INTO api_configs (name, provider, api_key, model, base_url, description) VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT OR REPLACE INTO api_configs (name, provider, api_key, model, base_url, description, updated_at) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+      [name, finalProvider, finalApiKey, finalModel, finalBaseUrl, finalDescription]
+    );
+  } else {
+    // 不存在，直接插入
+    await db.execute(
+      `INSERT OR REPLACE INTO api_configs (name, provider, api_key, model, base_url, description) VALUES (?, ?, ?, ?, ?, ?)`,
       [name, provider, apiKey, model, baseUrl, description]
     );
-    return;
   }
-  
-  // 记录已存在，执行 UPDATE
-  const updates: string[] = [];
-  const values: any[] = [];
-  
-  if (config.provider !== undefined) {
-    updates.push('provider = ?');
-    values.push(config.provider);
-  }
-  if (config.apiKey !== undefined) {
-    updates.push('api_key = ?');
-    values.push(config.apiKey);
-  }
-  if (config.model !== undefined) {
-    updates.push('model = ?');
-    values.push(config.model);
-  }
-  if (config.baseUrl !== undefined) {
-    updates.push('base_url = ?');
-    values.push(config.baseUrl);
-  }
-  if (config.description !== undefined) {
-    updates.push('description = ?');
-    values.push(config.description);
-  }
-  
-  if (updates.length === 0) return;
-  
-  updates.push('updated_at = CURRENT_TIMESTAMP');
-  values.push(name);
-  
-  await db.execute(
-    `UPDATE api_configs SET ${updates.join(', ')} WHERE name = ?`,
-    values
-  );
 }
 
 // ========== 导入/导出功能 ==========

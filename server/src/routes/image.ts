@@ -74,7 +74,7 @@ router.post('/generate', async (req, res) => {
   res.setTimeout(0);
   
   try {
-    const { prompt, provider, model, referenceImage, aspectRatio, size } = req.body;
+    const { prompt, provider, model, referenceImage, referenceImageMeta, aspectRatio, size } = req.body;
     
     if (!prompt) {
       return res.status(400).json({ error: '缺少提示词' });
@@ -87,6 +87,7 @@ router.post('/generate', async (req, res) => {
     const imageUrl = await generateImage({
       prompt,
       referenceImage,
+      referenceImageMeta,
       aspectRatio,
       size,
       model

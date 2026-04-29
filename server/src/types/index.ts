@@ -97,6 +97,7 @@ export interface StoryboardScene {
 export interface ImageGenParams {
   prompt: string;
   referenceImage?: string | string[];
+  referenceImageMeta?: { fileName: string; filePath: string }[];
   aspectRatio?: string;
   model?: string;
   size?: string;

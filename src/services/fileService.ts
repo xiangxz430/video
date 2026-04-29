@@ -233,7 +233,10 @@ export async function saveUrlImage(url: string, subfolder?: string): Promise<str
       await mkdir(targetDir, { recursive: true });
     }
     
-    const ext = contentType.includes('jpeg') || contentType.includes('jpg') ? 'jpg' : 'png';
+    const ext = contentType.includes('jpeg') || contentType.includes('jpg') ? 'jpg'
+      : contentType.includes('webp') ? 'webp'
+      : contentType.includes('gif') ? 'gif'
+      : 'png';
     const fileName = `${Date.now()}.${ext}`;
     const destPath = await join(targetDir, fileName);
     console.log('saveUrlImage: 保存路径:', destPath);

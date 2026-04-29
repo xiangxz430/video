@@ -72,10 +72,19 @@ async fn download_image(url: String) -> Result<DownloadResult, String> {
                 }
             };
             
-            // 获取 content-type（curl 输出了到 stderr）
-            let content_type = Some("image/png".to_string()); // 默认 png
+            // 根据文件魔数检测真实图片格式
+            let content_type = if bytes.len() >= 12 {
+                if bytes[0] == 0x89 && bytes[1] == 0x50 { Some("image/png".to_string()) }
+                else if bytes[0] == 0xFF && bytes[1] == 0xD8 { Some("image/jpeg".to_string()) }
+                else if bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[8] == 0x57 && bytes[9] == 0x45 { Some("image/webp".to_string()) }
+                else if bytes[0] == 0x47 && bytes[1] == 0x49 { Some("image/gif".to_string()) }
+                else { Some("image/png".to_string()) }
+            } else {
+                Some("image/png".to_string())
+            };
             
-            println!("[Rust] 下载成功，数据大小: {} bytes", bytes.len());
+            println!("[Rust] 下载成功，数据大小: {} bytes, 格式: {:?}", bytes.len(), content_type);
+
             
             // 清理临时文件
             let _ = std::fs::remove_file(&temp_file);

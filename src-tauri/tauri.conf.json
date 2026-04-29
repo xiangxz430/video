@@ -5,9 +5,9 @@
   "identifier": "com.openclaw.video-generator",
   "build": {
     "frontendDist": "../build",
-    "devUrl": "http://localhost:8080",
+    "devUrl": "http://8.147.65.80:3000",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "echo '前端已由build.sh构建，跳过重复构建'"
   },
   "app": {
     "windows": [

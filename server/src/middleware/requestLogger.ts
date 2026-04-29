@@ -65,9 +65,12 @@ function sanitizeBody(body: any, depth: number = 0): Record<string, any> {
   if (!body || typeof body !== 'object') return {};
 
   if (Array.isArray(body)) {
-    return body.slice(0, ARRAY_ELEMENT_LIMIT).map(item =>
-      typeof item === 'object' && item !== null ? sanitizeBody(item, depth + 1) : item
-    ) as any;
+    return body.slice(0, ARRAY_ELEMENT_LIMIT).map(item => {
+      if (typeof item === 'string' && item.length > TRUNCATE_LIMIT) {
+        return item.slice(0, TRUNCATE_LIMIT) + '...[truncated]';
+      }
+      return typeof item === 'object' && item !== null ? sanitizeBody(item, depth + 1) : item;
+    }) as any;
   }
 
   const result: Record<string, any> = {};
@@ -76,9 +79,12 @@ function sanitizeBody(body: any, depth: number = 0): Record<string, any> {
     if (typeof value === 'string' && TRUNCATABLE_FIELDS.has(key) && value.length > TRUNCATE_LIMIT) {
       result[key] = value.slice(0, TRUNCATE_LIMIT) + '...[truncated]';
     } else if (Array.isArray(value)) {
-      result[key] = value.slice(0, ARRAY_ELEMENT_LIMIT).map(item =>
-        typeof item === 'object' && item !== null ? sanitizeBody(item, depth + 1) : item
-      );
+      result[key] = value.slice(0, ARRAY_ELEMENT_LIMIT).map(item => {
+        if (typeof item === 'string' && TRUNCATABLE_FIELDS.has(key) && item.length > TRUNCATE_LIMIT) {
+          return item.slice(0, TRUNCATE_LIMIT) + '...[truncated]';
+        }
+        return typeof item === 'object' && item !== null ? sanitizeBody(item, depth + 1) : item;
+      });
     } else if (typeof value === 'object' && value !== null) {
       result[key] = sanitizeBody(value, depth + 1);
     } else {

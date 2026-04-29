@@ -1636,12 +1636,9 @@ const ScriptEditor: React.FC<ScriptEditorProps> = ({
                           className="cursor-pointer border-2 border-transparent hover:border-purple-500 rounded-lg overflow-hidden transition"
                         >
                           <img 
-                            src={`asset://localhost/${img.localPath}`}
+                            src={localPathToSrc(img.localPath) || ''}
                             alt={img.prompt || '历史图片'}
                             className="w-full aspect-video object-cover"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src = localPathToSrc(img.localPath) || '';
-                            }}
                           />
                           <div className="p-2 text-xs text-center truncate">
                             {img.prompt ? safeValue(img.prompt) : '无提示词'}

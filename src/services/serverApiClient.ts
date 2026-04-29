@@ -278,6 +278,8 @@ export interface GenerateImageParams {
   provider?: string;
   model?: string;
   referenceImage?: string | string[];
+  /** 参考图元数据（仅用于日志，不参与 AI 调用） */
+  referenceImageMeta?: { fileName: string; filePath: string }[];
   aspectRatio?: string;
   style?: string;
   size?: string;

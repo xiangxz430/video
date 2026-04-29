@@ -294,14 +294,17 @@ const SceneEditModal: React.FC<SceneEditModalProps> = ({ scene, onClose, onSave 
 
       // 将本地图片转为Base64
       const refImageBase64List: string[] = [];
+      const refImageMetaList: { fileName: string; filePath: string }[] = [];
       for (const imgPath of refImages) {
         if (isLocalFilePath(imgPath)) {
           const base64 = await localImageToBase64(imgPath);
           if (base64) {
             refImageBase64List.push(base64);
+            refImageMetaList.push({ fileName: imgPath.split('/').pop() || imgPath, filePath: imgPath });
           }
         } else {
           refImageBase64List.push(imgPath);
+          refImageMetaList.push({ fileName: imgPath.split('/').pop() || imgPath, filePath: imgPath });
         }
       }
 
@@ -318,7 +321,8 @@ const SceneEditModal: React.FC<SceneEditModalProps> = ({ scene, onClose, onSave 
         model: selectedModel,
         size: selectedSize,
         aspectRatio: selectedAspectRatio,
-        referenceImage: refImageBase64List.length === 1 ? refImageBase64List[0] : refImageBase64List
+        referenceImage: refImageBase64List.length === 1 ? refImageBase64List[0] : refImageBase64List,
+        referenceImageMeta: refImageMetaList.length > 0 ? refImageMetaList : undefined,
       };
 
       const generatedImageUrl = await generateImage(params, configWithModel);

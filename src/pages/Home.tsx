@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { invoke } from '@tauri-apps/api/core';
 import { generateImage, generateVideo } from '../services/serverApiClient';
 import { getApiConfig, getAllImageHistoryByDate, addGeneratedImageHistory, deleteGeneratedImageHistory, type GeneratedImageHistory, type ImageHistoryByDate, addHomeVideoHistory, getHomeVideoHistoryByDate, deleteHomeVideoHistory, importLocalVideosToHistory, type HomeVideoHistory, type VideoHistoryByDate } from '../services/database';
-import { uploadImage, saveUrlImage, localImageToBase64, isLocalFilePath, exportImageFile, downloadVideo, localVideoPathToSrc, scanLocalVideos } from '../services/fileService';
+import { uploadImage, saveUrlImage, localImageToBase64, isLocalFilePath, localPathToSrc, exportImageFile, downloadVideo, localVideoPathToSrc, scanLocalVideos } from '../services/fileService';
 import { useApp } from '../context/AppContext';
 import { getEnabledModels, ModelInfo, getModelDisplayText } from '../utils/modelConfig';
 
@@ -610,7 +610,7 @@ const Home: React.FC = () => {
               <div className="flex gap-2">
                 {refImages.map((img, idx) => (
                   <div key={idx} className="relative w-20 h-20">
-                    <img src={isLocalFilePath(img) ? `asset://localhost/${img}` : img} className="w-full h-full object-cover rounded-lg" />
+                    <img src={isLocalFilePath(img) ? (localPathToSrc(img) || undefined) : img} className="w-full h-full object-cover rounded-lg" />
                     <button
                       onClick={() => setRefImages(prev => prev.filter((_, i) => i !== idx))}
                       className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs"
@@ -698,7 +698,7 @@ const Home: React.FC = () => {
                   </button>
                 </div>
                 <img
-                  src={isLocalFilePath(generatedImageUrl) ? `asset://localhost/${generatedImageUrl}` : generatedImageUrl}
+                  src={isLocalFilePath(generatedImageUrl) ? (localPathToSrc(generatedImageUrl) || undefined) : generatedImageUrl}
                   className="w-full rounded-lg"
                   alt="Generated"
                 />
@@ -731,7 +731,7 @@ const Home: React.FC = () => {
                           {group.images.map((item) => (
                             <div key={item.id} className="relative group">
                               <img
-                                src={`asset://localhost/${item.localPath}`}
+                                src={localPathToSrc(item.localPath) || undefined}
                                 className="w-full h-20 object-cover rounded-lg cursor-pointer hover:ring-2 hover:ring-blue-400"
                                 alt={item.prompt || 'History'}
                                 onClick={() => handleDownloadHistoryImage(item)}
@@ -886,7 +886,7 @@ const Home: React.FC = () => {
                   </label>
                   {firstFrameImage ? (
                     <div className="relative aspect-video bg-gray-100 rounded-xl overflow-hidden">
-                      <img src={isLocalFilePath(firstFrameImage) ? `asset://localhost/${firstFrameImage}` : firstFrameImage} className="w-full h-full object-cover" />
+                      <img src={isLocalFilePath(firstFrameImage) ? (localPathToSrc(firstFrameImage) || undefined) : firstFrameImage} className="w-full h-full object-cover" />
                       <button
                         onClick={() => setFirstFrameImage(null)}
                         className="absolute top-2 right-2 w-8 h-8 bg-red-500 text-white rounded-full"
@@ -931,7 +931,7 @@ const Home: React.FC = () => {
                   </label>
                   {lastFrameImage ? (
                     <div className="relative aspect-video bg-gray-100 rounded-xl overflow-hidden">
-                      <img src={isLocalFilePath(lastFrameImage) ? `asset://localhost/${lastFrameImage}` : lastFrameImage} className="w-full h-full object-cover" />
+                      <img src={isLocalFilePath(lastFrameImage) ? (localPathToSrc(lastFrameImage) || undefined) : lastFrameImage} className="w-full h-full object-cover" />
                       <button
                         onClick={() => setLastFrameImage(null)}
                         className="absolute top-2 right-2 w-8 h-8 bg-red-500 text-white rounded-full"
@@ -978,7 +978,7 @@ const Home: React.FC = () => {
                     {videoRefImages.map((img, idx) => (
                       <div key={idx} className="relative">
                         <div className="aspect-video bg-gray-100 rounded-xl overflow-hidden">
-                          <img src={isLocalFilePath(img) ? `asset://localhost/${img}` : img} className="w-full h-full object-cover" />
+                          <img src={isLocalFilePath(img) ? (localPathToSrc(img) || undefined) : img} className="w-full h-full object-cover" />
                         </div>
                         <div className="absolute bottom-1 left-1 px-2 py-0.5 bg-black/60 text-white text-xs rounded">
                           图{idx + 1}
@@ -1242,7 +1242,7 @@ const Home: React.FC = () => {
                           onClick={() => handleSelectFromHistory(item)}
                         >
                           <img
-                            src={`asset://localhost/${item.localPath}`}
+                            src={localPathToSrc(item.localPath) || ''}
                             className="w-full h-28 object-cover"
                             alt={item.prompt || 'History'}
                           />

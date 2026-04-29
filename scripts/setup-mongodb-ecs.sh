@@ -33,12 +33,12 @@ log "凭证已配置"
 
 # ===== Step 3: 查询或创建 VPC =====
 log "===== Step 3: 查询或创建 VPC ====="
-VPC_ID=$(aliyun vpc DescribeVpcs --RegionId cn-beijing 2>/dev/null | grep -oP '"VpcId"\s*:\s*"\K[vpc-[a-zA-Z0-9]+"' | head -1 | tr -d '"')
+VPC_ID=$(aliyun vpc DescribeVpcs --RegionId cn-beijing 2>/dev/null | grep -oP '"VpcId"\s*:\s*"\Kvpc-[a-zA-Z0-9]+' | head -1)
 
 if [ -z "$VPC_ID" ]; then
   log "未找到 VPC，正在创建..."
   VPC_RESULT=$(aliyun vpc CreateVpc --RegionId cn-beijing --VpcName vg-vpc --CidrBlock 10.0.0.0/8 2>&1)
-  VPC_ID=$(echo "$VPC_RESULT" | grep -oP '"VpcId"\s*:\s*"\K[vpc-[a-zA-Z0-9]+' | head -1)
+  VPC_ID=$(echo "$VPC_RESULT" | grep -oP '"VpcId"\s*:\s*"\Kvpc-[a-zA-Z0-9]+' | head -1)
   if [ -z "$VPC_ID" ]; then
     log "❌ VPC 创建失败: ${VPC_RESULT}"
     exit 1
@@ -53,8 +53,8 @@ fi
 # ===== Step 4: 查询或创建 VSwitch =====
 log "===== Step 4: 查询或创建 VSwitch ====="
 VSW_INFO=$(aliyun vpc DescribeVSwitches --RegionId cn-beijing --VpcId ${VPC_ID} 2>/dev/null)
-VSW_ID=$(echo "$VSW_INFO" | grep -oP '"VSwitchId"\s*:\s*"\K[vsw-[a-zA-Z0-9]+' | head -1)
-ZONE_ID=$(echo "$VSW_INFO" | grep -oP '"ZoneId"\s*:\s*"\K[cn-beijing-a-z]+' | head -1)
+VSW_ID=$(echo "$VSW_INFO" | grep -oP '"VSwitchId"\s*:\s*"\Kvsw-[a-zA-Z0-9]+' | head -1)
+ZONE_ID=$(echo "$VSW_INFO" | grep -oP '"ZoneId"\s*:\s*"\Kcn-beijing-[a-z]+' | head -1)
 
 if [ -z "$VSW_ID" ]; then
   # 优先使用 cn-beijing-h（MongoDB 4.4 支持），否则用 cn-beijing-g
@@ -62,7 +62,7 @@ if [ -z "$VSW_ID" ]; then
   log "未找到 VSwitch，正在创建（Zone: ${ZONE_ID}）..."
   VSW_RESULT=$(aliyun vpc CreateVSwitch --RegionId cn-beijing --ZoneId ${ZONE_ID} \
     --VpcId ${VPC_ID} --CidrBlock 10.0.1.0/24 --VSwitchName vg-vswitch 2>&1)
-  VSW_ID=$(echo "$VSW_RESULT" | grep -oP '"VSwitchId"\s*:\s*"\K[vsw-[a-zA-Z0-9]+' | head -1)
+  VSW_ID=$(echo "$VSW_RESULT" | grep -oP '"VSwitchId"\s*:\s*"\Kvsw-[a-zA-Z0-9]+' | head -1)
   if [ -z "$VSW_ID" ]; then
     log "❌ VSwitch 创建失败: ${VSW_RESULT}"
     exit 1

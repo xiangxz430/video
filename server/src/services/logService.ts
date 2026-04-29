@@ -1,5 +1,4 @@
 import { RequestLog } from '../types/index.js';
-import { getAllLogs, getLogById as getLogByIdFromLogger } from '../middleware/requestLogger.js';
 import { getLogsCollection } from '../services/mongoService.js';
 
 // 分页查询日志参数
@@ -69,7 +68,7 @@ export async function queryLogs(params: QueryLogsParams): Promise<QueryLogsResul
  * 获取单条日志详情
  */
 export async function getLogById(id: string): Promise<RequestLog | null> {
-  return getLogByIdFromLogger(id);
+  return getLogsCollection().findOne({ id });
 }
 
 /**

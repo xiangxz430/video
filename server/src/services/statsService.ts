@@ -1,5 +1,4 @@
-import { getAllLogs } from '../middleware/requestLogger.js';
-import { RequestLog } from '../types/index.js';
+import { Document } from 'mongodb';
 import { listApiKeys } from './apiKeyService.js';
 import { estimateCallCost, getModelDisplayInfo } from './modelPricing.js';
 import { getLogsCollection } from './mongoService.js';
@@ -146,39 +145,35 @@ export async function getOverviewStats(): Promise<OverviewStats> {
 
   const collection = getLogsCollection();
 
-  const [timeResult, funcResult, provResult] = await Promise.all([
-    // 按时间段统计
-    collection.aggregate([
-      { $facet: {
-        today: [
-          { $match: { timestamp: { $gte: startOfToday } } },
-          { $group: { _id: null, total: { $sum: 1 }, success: { $sum: { $cond: [{ $and: [{ $gte: ['$statusCode', 200] }, { $lt: ['$statusCode', 300] }] }, 1, 0] } }, failed: { $sum: { $cond: [{ $or: [{ $lt: ['$statusCode', 200] }, { $gte: ['$statusCode', 300] }] }, 1, 0] } } } } },
-        ],
-        thisWeek: [
-          { $match: { timestamp: { $gte: startOfWeek } } },
-          { $group: { _id: null, total: { $sum: 1 }, success: { $sum: { $cond: [{ $and: [{ $gte: ['$statusCode', 200] }, { $lt: ['$statusCode', 300] }] }, 1, 0] } }, failed: { $sum: { $cond: [{ $or: [{ $lt: ['$statusCode', 200] }, { $gte: ['$statusCode', 300] }] }, 1, 0] } } } } },
-        ],
-        thisMonth: [
-          { $match: { timestamp: { $gte: startOfMonth } } },
-          { $group: { _id: null, total: { $sum: 1 }, success: { $sum: { $cond: [{ $and: [{ $gte: ['$statusCode', 200] }, { $lt: ['$statusCode', 300] }] }, 1, 0] } }, failed: { $sum: { $cond: [{ $or: [{ $lt: ['$statusCode', 200] }, { $gte: ['$statusCode', 300] }] }, 1, 0] } } } } },
-        ],
-      }},
-    ]).toArray(),
+  // 拆为 3 个独立聚合（避免 $facet 嵌套 $cond 的 TS 类型推断问题，且 MongoDB 可并行执行）
+  const successCond = { $cond: [{ $and: [{ $gte: ['$statusCode', 200] }, { $lt: ['$statusCode', 300] }] }, 1, 0] };
+  const failedCond = { $cond: [{ $or: [{ $lt: ['$statusCode', 200] }, { $gte: ['$statusCode', 300] }] }, 1, 0] };
+  const groupStage = { _id: null as null, total: { $sum: 1 }, success: { $sum: successCond }, failed: { $sum: failedCond } };
 
-    // 按功能统计
+  const [todayResult, weekResult, monthResult, funcResult, provResult] = await Promise.all([
+    collection.aggregate([
+      { $match: { timestamp: { $gte: startOfToday } } },
+      { $group: groupStage },
+    ] as Document[]).toArray(),
+    collection.aggregate([
+      { $match: { timestamp: { $gte: startOfWeek } } },
+      { $group: groupStage },
+    ] as Document[]).toArray(),
+    collection.aggregate([
+      { $match: { timestamp: { $gte: startOfMonth } } },
+      { $group: groupStage },
+    ] as Document[]).toArray(),
     collection.aggregate([
       { $group: { _id: '$function', count: { $sum: 1 } } },
-    ]).toArray(),
-
-    // 按 Provider 统计
+    ] as Document[]).toArray(),
     collection.aggregate([
       { $group: { _id: '$provider', count: { $sum: 1 } } },
-    ]).toArray(),
+    ] as Document[]).toArray(),
   ]);
 
-  const today = timeResult[0]?.today?.[0] || { total: 0, success: 0, failed: 0 };
-  const week = timeResult[0]?.thisWeek?.[0] || { total: 0, success: 0, failed: 0 };
-  const month = timeResult[0]?.thisMonth?.[0] || { total: 0, success: 0, failed: 0 };
+  const today = todayResult[0] || { total: 0, success: 0, failed: 0 };
+  const week = weekResult[0] || { total: 0, success: 0, failed: 0 };
+  const month = monthResult[0] || { total: 0, success: 0, failed: 0 };
 
   const byFunction: Record<string, number> = {};
   for (const item of funcResult) {
@@ -313,64 +308,80 @@ export async function getStatsByKey(): Promise<KeyStats[]> {
 
 /**
  * 按 Key 详细统计（含模型+功能细分+费用）
- * 这个查询较复杂，用内存聚合保持逻辑清晰度
+ * MongoDB 三级聚合：apiKeyMasked → provider+model → function
+ * 费用计算在 JS 侧完成（依赖 estimateCallCost 函数逻辑）
  */
 export async function getStatsByKeyDetail(): Promise<KeyDetailStats[]> {
-  const logs = await getAllLogs();
+  const collection = getLogsCollection();
   const apiKeys = listApiKeys();
 
-  const keyStatsMap: Record<string, {
-    lastUsedAt: string | null;
-    models: Record<string, {
-      provider: string;
-      model: string;
-      total: number;
-      success: number;
-      failed: number;
-      byFunction: Record<string, { total: number; success: number; failed: number }>;
-    }>;
-  }> = {};
-
-  for (const log of logs) {
-    const maskedKey = log.apiKeyMasked;
-    const modelKey = `${log.provider}::${log.model}`;
-    const func = log.function || 'other';
-    const success = isSuccess(log.statusCode);
-
-    if (!keyStatsMap[maskedKey]) {
-      keyStatsMap[maskedKey] = { lastUsedAt: null, models: {} };
+  // 三级聚合：先按 maskedKey+provider+model+function 分组，再逐级向上汇总
+  const results = await collection.aggregate([
+    // 第一级：按 maskedKey + provider + model + function 分组
+    {
+      $group: {
+        _id: {
+          maskedKey: '$apiKeyMasked',
+          provider: '$provider',
+          model: '$model',
+          function: { $ifNull: ['$function', 'other'] },
+        },
+        total: { $sum: 1 },
+        success: { $sum: { $cond: [{ $and: [{ $gte: ['$statusCode', 200] }, { $lt: ['$statusCode', 300] }] }, 1, 0] } },
+        failed: { $sum: { $cond: [{ $or: [{ $lt: ['$statusCode', 200] }, { $gte: ['$statusCode', 300] }] }, 1, 0] } },
+        lastUsedAt: { $max: '$timestamp' },
+      }
+    },
+    // 第二级：按 maskedKey + provider + model 汇总
+    {
+      $group: {
+        _id: {
+          maskedKey: '$_id.maskedKey',
+          provider: '$_id.provider',
+          model: '$_id.model',
+        },
+        total: { $sum: '$total' },
+        success: { $sum: '$success' },
+        failed: { $sum: '$failed' },
+        lastUsedAt: { $max: '$lastUsedAt' },
+        byFunction: {
+          $push: {
+            function: '$_id.function',
+            total: '$total',
+            success: '$success',
+            failed: '$failed',
+          }
+        }
+      }
+    },
+    // 第三级：按 maskedKey 汇总
+    {
+      $group: {
+        _id: '$_id.maskedKey',
+        lastUsedAt: { $max: '$lastUsedAt' },
+        models: {
+          $push: {
+            provider: '$_id.provider',
+            model: '$_id.model',
+            total: '$total',
+            success: '$success',
+            failed: '$failed',
+            byFunction: '$byFunction',
+          }
+        }
+      }
     }
+  ]).toArray();
 
-    const keyData = keyStatsMap[maskedKey];
-
-    if (!keyData.lastUsedAt || log.timestamp > keyData.lastUsedAt) {
-      keyData.lastUsedAt = log.timestamp;
-    }
-
-    if (!keyData.models[modelKey]) {
-      keyData.models[modelKey] = {
-        provider: log.provider,
-        model: log.model,
-        total: 0,
-        success: 0,
-        failed: 0,
-        byFunction: {},
-      };
-    }
-
-    const modelData = keyData.models[modelKey];
-    modelData.total++;
-    if (success) { modelData.success++; } else { modelData.failed++; }
-
-    if (!modelData.byFunction[func]) {
-      modelData.byFunction[func] = { total: 0, success: 0, failed: 0 };
-    }
-    modelData.byFunction[func].total++;
-    if (success) { modelData.byFunction[func].success++; } else { modelData.byFunction[func].failed++; }
+  // 构建聚合结果索引
+  const statsMap: Record<string, any> = {};
+  for (const r of results) {
+    statsMap[r._id] = r;
   }
 
+  // 映射到 KeyDetailStats，费用在 JS 侧计算
   return apiKeys.map(key => {
-    const keyData = keyStatsMap[key.maskedKey];
+    const keyData = statsMap[key.maskedKey];
     if (!keyData) {
       return { keyId: key.id, keyName: key.name, maskedKey: key.maskedKey, totalCalls: 0, totalCost: 0, lastUsedAt: null, models: [] };
     }
@@ -379,16 +390,17 @@ export async function getStatsByKeyDetail(): Promise<KeyDetailStats[]> {
     let totalCalls = 0;
     let totalCost = 0;
 
-    for (const [, modelData] of Object.entries(keyData.models)) {
+    for (const modelData of keyData.models) {
       const display = getModelDisplayInfo(modelData.provider, modelData.model);
       let modelCost = 0;
 
       const byFunctionWithCost: Record<string, { total: number; success: number; failed: number; estimatedCost: number }> = {};
-      for (const [func, funcData] of Object.entries(modelData.byFunction)) {
+      for (const funcData of modelData.byFunction) {
+        const func = funcData.function || 'other';
         const successCost = estimateCallCost(modelData.provider, modelData.model, func, true) * funcData.success;
         const failedCost = estimateCallCost(modelData.provider, modelData.model, func, false) * funcData.failed;
         const funcCost = successCost + failedCost;
-        byFunctionWithCost[func] = { ...funcData, estimatedCost: funcCost };
+        byFunctionWithCost[func] = { total: funcData.total, success: funcData.success, failed: funcData.failed, estimatedCost: funcCost };
         modelCost += funcCost;
       }
 

@@ -5,6 +5,10 @@ export const config = {
   port: parseInt(process.env.PORT || '3000'),
   apiKey: process.env.API_KEY || '',
   adminKey: process.env.ADMIN_KEY || '',
+  mongodb: {
+    uri: process.env.MONGODB_URI || 'mongodb://localhost:27017',
+    dbName: process.env.MONGODB_DB_NAME || 'video_generator',
+  },
   providers: {
     deepseek: {
       apiKey: process.env.DEEPSEEK_API_KEY || '',

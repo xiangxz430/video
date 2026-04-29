@@ -338,7 +338,7 @@ const Home: React.FC = () => {
       if (provider === 'grsai') {
         // GRSai: 优先获取视频配置，否则获取图片配置（共享同一个 API Key）
         videoConfig = await getApiConfig('videoGeneration_grsai');
-        if (!videoConfig?.apiKey) {
+        if (!videoConfig?.model) {
           videoConfig = await getApiConfig('imageGeneration_grsai');
         }
       } else if (provider === 'openrouter') {

@@ -163,12 +163,16 @@ export interface AIApiCall {
   // 轮询类任务（图片/视频生成）的额外信息
   pollAttempts?: number;  // 轮询次数
   taskId?: string;        // 异步任务ID
+  // AI API调用详情
+  requestBody?: Record<string, any>;    // 发送给AI的请求体（脱敏截断后）
+  responseBody?: Record<string, any>;   // AI返回的响应体（脱敏截断后）
 }
 
 // ========== 请求日志 ==========
 
 export interface RequestLog {
   id: string;
+  keyId?: string;           // API Key ID（按用户分区键，用于 MongoDB 查询）
   timestamp: string;
   method: string;
   endpoint: string;        // 如 /api/image/generate

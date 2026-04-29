@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import type { Script, Character, Scene, Episode, Segment, ApiConfig } from '../types';
 import * as db from '../services/database';
 
@@ -59,6 +59,12 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // 状态
   const [currentScript, setCurrentScript] = useState<Script | null>(null);
+  // 使用 ref 跟踪 currentScript.id，避免回调依赖 currentScript 导致频繁重建
+  const currentScriptIdRef = useRef<number | null>(null);
+  const setCurrentScriptWithRef = (script: Script | null) => {
+    currentScriptIdRef.current = script?.id ?? null;
+    setCurrentScript(script);
+  };
   const [characters, setCharacters] = useState<Character[]>([]);
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [episodes, setEpisodes] = useState<Episode[]>([]);
@@ -139,12 +145,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           content: ''
         });
         const script = await db.getScript(newId);
-        setCurrentScript(script);
+        setCurrentScriptWithRef(script);
         return;
       }
       
       const script = await db.getScript(id);
-      setCurrentScript(script);
+      setCurrentScriptWithRef(script);
       if (script?.id) {
         await Promise.all([
           loadCharacters(script.id),
@@ -161,7 +167,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsLoading(true);
     try {
       const script = await db.getLatestScript();
-      setCurrentScript(script);
+      setCurrentScriptWithRef(script);
       if (script?.id) {
         await Promise.all([
           loadCharacters(script.id),
@@ -182,20 +188,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateScript = useCallback(async (id: number, script: Partial<Script>) => {
     await db.updateScript(id, script);
-    if (currentScript?.id === id) {
-      setCurrentScript(prev => prev ? { ...prev, ...script } : null);
-    }
-  }, [currentScript]);
+    // 使用函数式更新避免依赖 currentScript
+    setCurrentScript(prev => prev?.id === id ? { ...prev, ...script } : prev);
+  }, []);
 
   const deleteScript = useCallback(async (id: number) => {
     await db.deleteScript(id);
-    if (currentScript?.id === id) {
+    const isCurrentScript = currentScriptIdRef.current === id;
+    if (isCurrentScript) {
+      currentScriptIdRef.current = null;
       setCurrentScript(null);
       setCharacters([]);
       setScenes([]);
       setEpisodes([]);
     }
-  }, [currentScript]);
+  }, []);
 
   // ===== 角色操作 =====
   const loadCharacters = useCallback(async (scriptId: number) => {
@@ -205,25 +212,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const createCharacter = useCallback(async (character: Character): Promise<number> => {
     const id = await db.createCharacter(character);
-    if (currentScript?.id) {
-      await loadCharacters(currentScript.id);
+    const scriptId = currentScriptIdRef.current;
+    if (scriptId) {
+      await loadCharacters(scriptId);
     }
     return id;
-  }, [currentScript]);
+  }, []);
 
   const updateCharacter = useCallback(async (id: number, character: Partial<Character>) => {
     await db.updateCharacter(id, character);
-    if (currentScript?.id) {
-      await loadCharacters(currentScript.id);
+    const scriptId = currentScriptIdRef.current;
+    if (scriptId) {
+      await loadCharacters(scriptId);
     }
-  }, [currentScript]);
+  }, []);
 
   const deleteCharacter = useCallback(async (id: number) => {
     await db.deleteCharacter(id);
-    if (currentScript?.id) {
-      await loadCharacters(currentScript.id);
+    const scriptId = currentScriptIdRef.current;
+    if (scriptId) {
+      await loadCharacters(scriptId);
     }
-  }, [currentScript]);
+  }, []);
 
   // ===== 场景操作 =====
   const loadScenes = useCallback(async (scriptId: number) => {
@@ -233,25 +243,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const createScene = useCallback(async (scene: Scene): Promise<number> => {
     const id = await db.createScene(scene);
-    if (currentScript?.id) {
-      await loadScenes(currentScript.id);
+    const scriptId = currentScriptIdRef.current;
+    if (scriptId) {
+      await loadScenes(scriptId);
     }
     return id;
-  }, [currentScript]);
+  }, []);
 
   const updateScene = useCallback(async (id: number, scene: Partial<Scene>) => {
     await db.updateScene(id, scene);
-    if (currentScript?.id) {
-      await loadScenes(currentScript.id);
+    const scriptId = currentScriptIdRef.current;
+    if (scriptId) {
+      await loadScenes(scriptId);
     }
-  }, [currentScript]);
+  }, []);
 
   const deleteScene = useCallback(async (id: number) => {
     await db.deleteScene(id);
-    if (currentScript?.id) {
-      await loadScenes(currentScript.id);
+    const scriptId = currentScriptIdRef.current;
+    if (scriptId) {
+      await loadScenes(scriptId);
     }
-  }, [currentScript]);
+  }, []);
 
   // ===== 分集操作 =====
   const loadEpisodes = useCallback(async (scriptId: number) => {
@@ -261,25 +274,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const createEpisode = useCallback(async (episode: Episode): Promise<number> => {
     const id = await db.createEpisode(episode);
-    if (currentScript?.id) {
-      await loadEpisodes(currentScript.id);
+    const scriptId = currentScriptIdRef.current;
+    if (scriptId) {
+      await loadEpisodes(scriptId);
     }
     return id;
-  }, [currentScript]);
+  }, []);
 
   const updateEpisode = useCallback(async (id: number, episode: Partial<Episode>) => {
     await db.updateEpisode(id, episode);
-    if (currentScript?.id) {
-      await loadEpisodes(currentScript.id);
+    const scriptId = currentScriptIdRef.current;
+    if (scriptId) {
+      await loadEpisodes(scriptId);
     }
-  }, [currentScript]);
+  }, []);
 
   const deleteEpisode = useCallback(async (id: number) => {
     await db.deleteEpisode(id);
-    if (currentScript?.id) {
-      await loadEpisodes(currentScript.id);
+    const scriptId = currentScriptIdRef.current;
+    if (scriptId) {
+      await loadEpisodes(scriptId);
     }
-  }, [currentScript]);
+  }, []);
 
   // ===== 分集操作 =====
   const loadSegments = useCallback(async (episodeId: number) => {
@@ -304,20 +320,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateSegment = useCallback(async (id: number, segment: Partial<Segment>) => {
     await db.updateSegment(id, segment);
-    // 重新加载相关分集
-    const existingSegment = segments.find(s => s.id === id);
-    if (existingSegment) {
-      await loadSegments(existingSegment.episodeId);
+    // 使用函数式更新从最新状态中查找 episodeId，然后重新加载该 episode 的 segments
+    let targetEpisodeId: number | undefined;
+    setSegments(prev => {
+      const existing = prev.find(s => s.id === id);
+      if (existing) targetEpisodeId = existing.episodeId;
+      return prev;
+    });
+    if (targetEpisodeId) {
+      const data = await db.getSegmentsByEpisode(targetEpisodeId);
+      setSegments(data || []);
     }
-  }, [segments]);
+  }, []);
 
   const deleteSegment = useCallback(async (id: number) => {
-    const existingSegment = segments.find(s => s.id === id);
+    // 使用 ref 记录 episodeId，避免在 setState 中执行副作用
+    let targetEpisodeId: number | undefined;
+    // 从当前 segments 中查找（读取最新 state）
+    setSegments(prev => {
+      const existing = prev.find(s => s.id === id);
+      if (existing) targetEpisodeId = existing.episodeId;
+      return prev;
+    });
     await db.deleteSegment(id);
-    if (existingSegment) {
-      await loadSegments(existingSegment.episodeId);
+    if (targetEpisodeId) {
+      const data = await db.getSegmentsByEpisode(targetEpisodeId);
+      setSegments(data || []);
     }
-  }, [segments]);
+  }, []);
 
   // ===== API 配置操作 =====
   const loadApiConfigs = useCallback(async () => {
@@ -332,16 +362,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // 刷新所有数据
   const refreshData = useCallback(async () => {
-    if (currentScript?.id) {
+    const scriptId = currentScriptIdRef.current;
+    if (scriptId) {
       await Promise.all([
-        loadCharacters(currentScript.id),
-        loadScenes(currentScript.id),
-        loadEpisodes(currentScript.id)
+        loadCharacters(scriptId),
+        loadScenes(scriptId),
+        loadEpisodes(scriptId)
       ]);
     }
-  }, [currentScript]);
+  }, []);
 
-  const value: AppContextType = {
+  // useMemo 避免每次渲染都创建新的 value 对象，导致所有消费者不必要的重渲染
+  const value = React.useMemo<AppContextType>(() => ({
     currentScript,
     characters,
     scenes,
@@ -374,7 +406,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     loadApiConfigs,
     updateApiConfig,
     refreshData
-  };
+  }), [
+    currentScript, characters, scenes, episodes, segments, apiConfigs, isLoading, isInitialized,
+    loadScript, loadLatestScript, createScript, updateScript, deleteScript,
+    loadCharacters, createCharacter, updateCharacter, deleteCharacter,
+    loadScenes, createScene, updateScene, deleteScene,
+    loadEpisodes, createEpisode, updateEpisode, deleteEpisode,
+    loadSegments, createSegment, updateSegment, deleteSegment,
+    loadApiConfigs, updateApiConfig, refreshData
+  ]);
 
   return (
     <AppContext.Provider value={value}>

@@ -5,7 +5,56 @@
 import type { ApiConfig, OpenAIMessage, SplitScriptResult, ScriptGenerationResult } from '../types/index.js';
 import { callAI, callOpenAICompatible, callIdealab, SCRIPT_PROVIDERS } from './apiClients.js';
 import { getProviderConfig } from '../config/index.js';
-import { recordAICall } from './logContext.js';
+import { recordAICall, sanitizeAICallBody } from './logContext.js';
+
+// ========== JSON 修复工具函数 ==========
+
+/**
+ * 线性扫描补全JSON中缺失的闭合引号（O(n) 单遍扫描，替换原 O(n²) 惰性正则）
+ * 场景：AI 返回的 JSON 中，某些字符串值缺少闭合引号，如 "key": "value, 或 "key": "value]
+ */
+function fixMissingClosingQuotes(json: string): string {
+  const result: string[] = [];
+  let inString = false;
+  let escapeNext = false;
+
+  for (let i = 0; i < json.length; i++) {
+    const ch = json[i];
+
+    if (escapeNext) {
+      result.push(ch);
+      escapeNext = false;
+      continue;
+    }
+
+    if (ch === '\\') {
+      escapeNext = true;
+      result.push(ch);
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = !inString;
+      result.push(ch);
+      continue;
+    }
+
+    // 如果在字符串内部遇到了结构性字符（逗号、闭合括号、换行），说明前面的引号没有闭合
+    if (inString && (ch === ',' || ch === '}' || ch === ']' || ch === '\n' || ch === '\r')) {
+      result.push('"');  // 补上缺失的闭合引号
+      inString = false;
+    }
+
+    result.push(ch);
+  }
+
+  // 如果遍历完还在字符串中，补最后的引号
+  if (inString) {
+    result.push('"');
+  }
+
+  return result.join('');
+}
 
 // ========== 剧本拆分：提取角色和场景 ==========
 
@@ -130,7 +179,8 @@ ${scriptContent}
     model: config.model || '',
     endpoint,
     requestTime: Date.now() - callStartTime,
-    status: 'success'
+    status: 'success',
+    requestBody: sanitizeAICallBody({ action: 'splitScript', scriptContentLength: scriptContent.length }),
   });
   
   const jsonMatch = content.match(/\{[\s\S]*\}/);
@@ -142,10 +192,14 @@ ${scriptContent}
     return JSON.parse(jsonStr);
   } catch (e1) {
     console.warn('JSON 解析失败，尝试修复...', e1);
-    
+  
+    // 修复1: 去除多余逗号（JSON 允许尾逗号前的值但不允许尾逗号本身）
     jsonStr = jsonStr.replace(/,\s*([\]}])/g, '$1');
-    jsonStr = jsonStr.replace(/"([^"]*?)(?=[\s,}\]])/g, '"$1"');
-    
+  
+    // 修复2: 线性扫描补全缺失的闭合引号（O(n)，替换原 O(n²) 惰性正则）
+    jsonStr = fixMissingClosingQuotes(jsonStr);
+  
+    // 修复3: 对特定字段内容进行转义清理
     const stringFields = ['content', 'description', 'title', 'name', 'line', 'scene', 'action', 'notes', 'dialogue'];
     stringFields.forEach(field => {
       const pattern = '"' + field + '"' + '\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"';
@@ -158,7 +212,7 @@ ${scriptContent}
           .replace(/\r/g, '\\r')
           .replace(/\t/g, '\\t')
           .replace(/\f/g, '\\f')
-          .replace(/[^\x20-\x7E\\n\\r\\t\\"\\\\]/g, '');
+          .replace(/[^\x20-\x7E\\n\\r\\t\"\\\\]/g, '');
         return '"' + field + '": "' + cleaned + '"';
       });
     });
@@ -336,7 +390,8 @@ ${scriptContent}
     model: config.model || '',
     endpoint,
     requestTime: Date.now() - callStartTime,
-    status: 'success'
+    status: 'success',
+    requestBody: sanitizeAICallBody({ action: 'splitScriptWithConfig', scriptContentLength: scriptContent.length, provider: config.provider }),
   });
   
   console.log(`[splitScriptWithConfig] API 返回内容长度: ${content.length}`);
@@ -473,7 +528,8 @@ ${scriptContent}`;
       model: config.model || '',
       endpoint,
       requestTime: Date.now() - callStartTime,
-      status: 'success'
+      status: 'success',
+      requestBody: sanitizeAICallBody({ action: 'extractEpisodes', episodeCount, scriptContentLength: scriptContent.length }),
     });
 
     const episodes: Array<{ episodeNumber: number; title: string; content: string }> = [];
@@ -568,7 +624,8 @@ export async function generateScriptWithFallback(
         model: config.model || '',
         endpoint,
         requestTime: Date.now() - callStartTime,
-        status: 'success'
+        status: 'success',
+        requestBody: sanitizeAICallBody({ action: 'generateScript', promptLength: prompt.length, provider: config.provider }),
       });
       
       return { content, provider: config.provider, providerName: name };
@@ -582,7 +639,8 @@ export async function generateScriptWithFallback(
         endpoint,
         requestTime: Date.now() - callStartTime,
         status: 'failed',
-        errorMessage: errorMsg
+        errorMessage: errorMsg,
+        requestBody: sanitizeAICallBody({ action: 'generateScript', promptLength: prompt.length, provider: config.provider }),
       });
     }
   }

@@ -24,11 +24,11 @@ export async function getImageConfigForModel(
   // GRSai 模型
   if (modelInfo.provider === 'grsai') {
     const grsaiConfig = allConfigs.find(c => c.name === 'imageGeneration_grsai');
-    if (grsaiConfig && grsaiConfig.apiKey?.trim()) {
+    if (grsaiConfig && grsaiConfig.model?.trim()) {
       return { ...grsaiConfig, provider: 'grsai', model: modelId };
     }
     // 回退：找任何 grsai 配置
-    const anyGrsai = allConfigs.find(c => c.provider === 'grsai' && c.apiKey?.trim());
+    const anyGrsai = allConfigs.find(c => c.provider === 'grsai' && c.model?.trim());
     if (anyGrsai) return { ...anyGrsai, provider: 'grsai', model: modelId };
   }
 
@@ -37,7 +37,7 @@ export async function getImageConfigForModel(
     const openrouterConfigs = allConfigs.filter(c =>
       c.provider === 'openrouter' &&
       c.name.toLowerCase().includes('imagegeneration') &&
-      c.apiKey?.trim()
+      c.model?.trim()
     );
     if (openrouterConfigs.length > 0) {
       return { ...openrouterConfigs[0], provider: 'openrouter', model: modelId };

@@ -16,7 +16,7 @@ function buildApiUrl(serverUrl: string, endpoint: string): string {
   const base = cleanUrl(serverUrl);
   const url = `${base}${endpoint}`;
   // 将路径中的连续斜杠替换为单斜杠（保留 :// 协议部分）
-  return url.replace(/([^:\/])\/+/, '$1/');
+  return url.replace(/([^:\/])\/+/g, '$1/');
 }
 import { getApiConfig, updateApiConfig } from './database';
 

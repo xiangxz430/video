@@ -203,7 +203,9 @@ export async function splitScriptWithAI(script: string, systemPrompt?: string): 
 }
 
 export async function splitScriptWithConfig(script: string, config: any, customInfo?: string): Promise<any> {
-  return splitScript({ script: script + (customInfo || '') });
+  // customInfo 是系统提示词信息，不应拼接到脚本内容
+  // 服务端 /api/script/split 暂不支持 customInfo，仅传递脚本内容
+  return splitScript({ script });
 }
 
 export async function extractEpisodesFromScript(script: string): Promise<any[]> {

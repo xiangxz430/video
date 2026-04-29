@@ -411,13 +411,13 @@ export function findApiConfigForModel(
 export function getDefaultImageConfig(apiConfigs: ApiConfig[]): ApiConfig | null {
   // 优先查找 imageGeneration 配置
   const imageConfig = apiConfigs.find(c => c.name === 'imageGeneration');
-  if (imageConfig && imageConfig.apiKey) {
+  if (imageConfig && imageConfig.model) {
     return imageConfig;
   }
   
   // 查找第一个有 API Key 的图片生成配置
   const firstImageConfig = apiConfigs.find(c => 
-    c.name.toLowerCase().includes('imagegeneration') && c.apiKey
+    c.name.toLowerCase().includes('imagegeneration') && c.model
   );
   
   return firstImageConfig || null;
@@ -429,13 +429,13 @@ export function getDefaultImageConfig(apiConfigs: ApiConfig[]): ApiConfig | null
 export function getDefaultVideoConfig(apiConfigs: ApiConfig[]): ApiConfig | null {
   // 优先查找 videoGeneration 配置
   const videoConfig = apiConfigs.find(c => c.name === 'videoGeneration');
-  if (videoConfig && videoConfig.apiKey) {
+  if (videoConfig && videoConfig.model) {
     return videoConfig;
   }
   
   // 查找第一个有 API Key 的视频生成配置
   const firstVideoConfig = apiConfigs.find(c => 
-    c.name.toLowerCase().includes('videogeneration') && c.apiKey
+    c.name.toLowerCase().includes('videogeneration') && c.model
   );
   
   return firstVideoConfig || null;

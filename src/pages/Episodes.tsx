@@ -95,7 +95,7 @@ const Episodes: React.FC = () => {
         const modelId = underscoreIdx >= 0 ? selectedModelKey.substring(underscoreIdx + 1) : selectedModelKey;
         finalConfig = findApiConfigForModel(apiConfigs, modelId);
       }
-      if (!finalConfig?.apiKey) {
+      if (!finalConfig?.model) {
         // 统一 getBestConfig 自动处理 DeepSeek-Reasoner → DeepSeek-Chat → 旧配置 → 任何可用
         finalConfig = getBestConfig(apiConfigs, 'scriptGeneration');
       }
@@ -208,23 +208,39 @@ const Episodes: React.FC = () => {
   // 每个分集的 segments 缓存（从数据库直接查询）
   const [episodeSegmentsMap, setEpisodeSegmentsMap] = useState<Record<number, any[]>>({});
 
-  // 加载所有分集的 segments
+  // 加载分集的 segments（仅加载新增的分集，避免覆盖已手动刷新的数据）
   useEffect(() => {
-    const loadAllSegments = async () => {
-      const map: Record<number, any[]> = {};
-      for (const ep of episodes) {
-        if (!ep.id) continue;
+    if (episodes.length === 0) return;
+
+    let cancelled = false;
+    const loadMissing = async () => {
+      // 读取当前 map 的快照，判断哪些分集尚未加载
+      let currentMap: Record<number, any[]> = {};
+      setEpisodeSegmentsMap(prev => {
+        currentMap = prev;
+        return prev;
+      });
+
+      const missingEpisodes = episodes.filter(ep => ep.id !== undefined && !(ep.id! in currentMap));
+      if (missingEpisodes.length === 0) return;
+
+      const newEntries: Record<number, any[]> = {};
+      for (const ep of missingEpisodes) {
+        if (cancelled) return;
         try {
-          map[ep.id] = await dbGetSegmentsByEpisode(ep.id);
+          newEntries[ep.id!] = await dbGetSegmentsByEpisode(ep.id!);
         } catch (e) {
-          map[ep.id] = [];
+          newEntries[ep.id!] = [];
         }
       }
-      setEpisodeSegmentsMap(map);
+
+      if (!cancelled && Object.keys(newEntries).length > 0) {
+        setEpisodeSegmentsMap(prev => ({ ...prev, ...newEntries }));
+      }
     };
-    if (episodes.length > 0) {
-      loadAllSegments();
-    }
+
+    loadMissing();
+    return () => { cancelled = true; };
   }, [episodes]);
 
   // 转换数据为 EpisodeCard 期望的格式
@@ -341,7 +357,7 @@ const Episodes: React.FC = () => {
         const modelId = underscoreIdx >= 0 ? selectedModelKey.substring(underscoreIdx + 1) : selectedModelKey;
         finalConfig = findApiConfigForModel(apiConfigs, modelId);
       }
-      if (!finalConfig?.apiKey) {
+      if (!finalConfig?.model) {
         finalConfig = getBestConfig(apiConfigs, 'scriptGeneration');
       }
       

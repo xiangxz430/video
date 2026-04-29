@@ -4,7 +4,7 @@
  */
 import type { ApiConfig, ImageGenParams } from '../types/index.js';
 import { getProviderConfig } from '../config/index.js';
-import { recordAICall } from './logContext.js';
+import { recordAICall, sanitizeAICallBody } from './logContext.js';
 
 // ========== 通义万相 - 图片生成 ==========
 
@@ -51,24 +51,29 @@ export async function submitWanxTask(config: ApiConfig, prompt: string): Promise
     const data = await response.json() as WanxResponse;
     const taskId = data.output.task_id;
     
+    const reqBody = { model, input: { prompt }, parameters: { size: '768*1024', n: 1, style: '<auto>' } };
     recordAICall({
       provider: 'qwen',
       model,
       endpoint,
       requestTime: Date.now() - startTime,
       status: 'success',
-      taskId
+      taskId,
+      requestBody: sanitizeAICallBody(reqBody),
+      responseBody: sanitizeAICallBody({ taskId, taskStatus: data.output.task_status }),
     });
     
     return taskId;
   } catch (error: any) {
+    const reqBody = { model, input: { prompt }, parameters: { size: '768*1024', n: 1, style: '<auto>' } };
     recordAICall({
       provider: 'qwen',
       model,
       endpoint,
       requestTime: Date.now() - startTime,
       status: 'failed',
-      errorMessage: error.message || '未知错误'
+      errorMessage: error.message || '未知错误',
+      requestBody: sanitizeAICallBody(reqBody),
     });
     throw error;
   }
@@ -115,7 +120,8 @@ export async function waitForWanxTask(config: ApiConfig, taskId: string, maxRetr
         requestTime: Date.now() - startTime,
         status: 'success',
         pollAttempts: i + 1,
-        taskId
+        taskId,
+        responseBody: sanitizeAICallBody({ imageUrl: url }),
       });
       return url;
     }
@@ -128,7 +134,8 @@ export async function waitForWanxTask(config: ApiConfig, taskId: string, maxRetr
     requestTime: Date.now() - startTime,
     status: 'timeout',
     pollAttempts: maxRetries,
-    taskId
+    taskId,
+    responseBody: sanitizeAICallBody({ maxRetries }),
   });
   
   throw new Error('图片生成超时');
@@ -243,7 +250,9 @@ async function generateVolcImage(params: ImageGenParams, config: ApiConfig): Pro
       model,
       endpoint,
       requestTime: Date.now() - startTime,
-      status: 'success'
+      status: 'success',
+      requestBody: sanitizeAICallBody(requestBody),
+      responseBody: sanitizeAICallBody({ imageUrl: data.data[0].url }),
     });
     return data.data[0].url;
   }
@@ -254,7 +263,8 @@ async function generateVolcImage(params: ImageGenParams, config: ApiConfig): Pro
     endpoint,
     requestTime: Date.now() - startTime,
     status: 'failed',
-    errorMessage: '图片生成失败：响应中未找到图片 URL'
+    errorMessage: '图片生成失败：响应中未找到图片 URL',
+    requestBody: sanitizeAICallBody(requestBody),
   });
   throw new Error('图片生成失败：响应中未找到图片 URL');
 }
@@ -333,7 +343,9 @@ export async function generateImageWithOpenRouter(
         model,
         endpoint,
         requestTime: Date.now() - startTime,
-        status: 'success'
+        status: 'success',
+        requestBody: sanitizeAICallBody({ model, prompt: prompt.slice(0, 200), modalities: ['image'] }),
+        responseBody: sanitizeAICallBody({ hasImage: true }),
       });
       return imageUrl;
     }
@@ -345,7 +357,8 @@ export async function generateImageWithOpenRouter(
     endpoint,
     requestTime: Date.now() - startTime,
     status: 'failed',
-    errorMessage: 'OpenRouter 返回格式错误,未找到生成的图片'
+    errorMessage: 'OpenRouter 返回格式错误,未找到生成的图片',
+    requestBody: sanitizeAICallBody({ model, prompt: prompt.slice(0, 200), modalities: ['image'] }),
   });
   throw new Error('OpenRouter 返回格式错误,未找到生成的图片');
 }
@@ -466,7 +479,9 @@ export async function generateImageWithGrsai(
                     model,
                     endpoint: apiEndpoint,
                     requestTime: Date.now() - startTime,
-                    status: 'success'
+                    status: 'success',
+                    requestBody: sanitizeAICallBody({ model, prompt, aspectRatio, imageSize: size, hasReferenceImage: !!referenceImage }),
+                    responseBody: sanitizeAICallBody({ imageUrl }),
                   });
                   return imageUrl;
                 }
@@ -484,7 +499,8 @@ export async function generateImageWithGrsai(
                   endpoint: apiEndpoint,
                   requestTime: Date.now() - startTime,
                   status: 'failed',
-                  errorMessage: failMsg
+                  errorMessage: failMsg,
+                  requestBody: sanitizeAICallBody({ model, prompt, aspectRatio, imageSize: size }),
                 });
                 throw new Error(failMsg);
               }
@@ -509,7 +525,8 @@ export async function generateImageWithGrsai(
         endpoint: apiEndpoint,
         requestTime: Date.now() - startTime,
         status: 'failed',
-        errorMessage: '流式响应结束但未获取到图片'
+        errorMessage: '流式响应结束但未获取到图片',
+        requestBody: sanitizeAICallBody({ model, prompt, aspectRatio, imageSize: size }),
       });
       throw new Error('流式响应结束但未获取到图片');
     } catch (e: any) {
@@ -521,7 +538,8 @@ export async function generateImageWithGrsai(
           endpoint: apiEndpoint,
           requestTime: Date.now() - startTime,
           status: 'timeout',
-          errorMessage: '图片生成超时（300秒），模型处理时间过长'
+          errorMessage: '图片生成超时（300秒），模型处理时间过长',
+          requestBody: sanitizeAICallBody({ model, prompt, aspectRatio, imageSize: size }),
         });
         throw new Error('图片生成超时（300秒），模型处理时间过长');
       }
@@ -545,7 +563,8 @@ export async function generateImageWithGrsai(
         endpoint: apiEndpoint,
         requestTime: Date.now() - startTime,
         status: 'failed',
-        errorMessage: `HTTP ${drawResponse.status}: ${errorText || drawResponse.statusText}`
+        errorMessage: `HTTP ${drawResponse.status}: ${errorText || drawResponse.statusText}`,
+        requestBody: sanitizeAICallBody(requestBody),
       });
       throw new Error(`HTTP ${drawResponse.status}: ${errorText || drawResponse.statusText}`);
     }
@@ -559,7 +578,9 @@ export async function generateImageWithGrsai(
         endpoint: apiEndpoint,
         requestTime: Date.now() - startTime,
         status: 'failed',
-        errorMessage: `Grsai API 错误: ${drawData.error}`
+        errorMessage: `Grsai API 错误: ${drawData.error}`,
+        requestBody: sanitizeAICallBody(requestBody),
+        responseBody: sanitizeAICallBody({ error: drawData.error }),
       });
       throw new Error(`Grsai API 错误: ${drawData.error}`);
     }
@@ -571,7 +592,9 @@ export async function generateImageWithGrsai(
         model,
         endpoint: apiEndpoint,
         requestTime: Date.now() - startTime,
-        status: 'success'
+        status: 'success',
+        requestBody: sanitizeAICallBody(requestBody),
+        responseBody: sanitizeAICallBody({ imageUrl }),
       });
       return imageUrl;
     }
@@ -585,7 +608,9 @@ export async function generateImageWithGrsai(
           model,
           endpoint: apiEndpoint,
           requestTime: Date.now() - startTime,
-          status: 'success'
+          status: 'success',
+          requestBody: sanitizeAICallBody(requestBody),
+          responseBody: sanitizeAICallBody({ imageUrl }),
         });
         return imageUrl;
       }
@@ -597,7 +622,8 @@ export async function generateImageWithGrsai(
         model,
         endpoint: apiEndpoint,
         requestTime: Date.now() - startTime,
-        status: 'success'
+        status: 'success',
+        requestBody: sanitizeAICallBody(requestBody),
       });
       return drawData.data;
     }
@@ -609,7 +635,9 @@ export async function generateImageWithGrsai(
         model,
         endpoint: apiEndpoint,
         requestTime: Date.now() - startTime,
-        status: 'success'
+        status: 'success',
+        requestBody: sanitizeAICallBody(requestBody),
+        responseBody: sanitizeAICallBody({ imageUrl }),
       });
       return imageUrl;
     }
@@ -621,7 +649,9 @@ export async function generateImageWithGrsai(
         endpoint: apiEndpoint,
         requestTime: Date.now() - startTime,
         status: 'failed',
-        errorMessage: drawData.msg || drawData.message || drawData.error || '绘画请求失败'
+        errorMessage: drawData.msg || drawData.message || drawData.error || '绘画请求失败',
+        requestBody: sanitizeAICallBody(requestBody),
+        responseBody: sanitizeAICallBody({ msg: drawData.msg, error: drawData.error }),
       });
       throw new Error(drawData.msg || drawData.message || drawData.error || '绘画请求失败');
     }
@@ -662,7 +692,9 @@ export async function generateImageWithGrsai(
               requestTime: Date.now() - startTime,
               status: 'success',
               pollAttempts: attempt + 1,
-              taskId
+              taskId,
+              requestBody: sanitizeAICallBody(requestBody),
+              responseBody: sanitizeAICallBody({ imageUrl }),
             });
             return imageUrl;
           }
@@ -676,7 +708,9 @@ export async function generateImageWithGrsai(
             status: 'failed',
             errorMessage: result.failure_reason || result.error || '图片生成失败',
             pollAttempts: attempt + 1,
-            taskId
+            taskId,
+            requestBody: sanitizeAICallBody(requestBody),
+            responseBody: sanitizeAICallBody({ failure_reason: result.failure_reason, error: result.error }),
           });
           throw new Error(result.failure_reason || result.error || '图片生成失败');
         }
@@ -690,7 +724,9 @@ export async function generateImageWithGrsai(
             status: 'failed',
             errorMessage: resultData.msg || resultData.message || 'apikey error',
             pollAttempts: attempt + 1,
-            taskId
+            taskId,
+            requestBody: sanitizeAICallBody(requestBody),
+            responseBody: sanitizeAICallBody({ msg: resultData.msg, code: resultData.code }),
           });
           throw new Error(resultData.msg || resultData.message || 'apikey error');
         }
@@ -704,7 +740,8 @@ export async function generateImageWithGrsai(
       requestTime: Date.now() - startTime,
       status: 'timeout',
       pollAttempts: maxAttempts,
-      taskId
+      taskId,
+      requestBody: sanitizeAICallBody(requestBody),
     });
     throw new Error('图片生成超时');
   }

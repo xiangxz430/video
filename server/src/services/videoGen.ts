@@ -4,7 +4,7 @@
  */
 import type { ApiConfig, VideoGenParams, VideoGenResult } from '../types/index.js';
 import { generateVolcSignature } from './apiClients.js';
-import { recordAICall } from './logContext.js';
+import { recordAICall, sanitizeAICallBody } from './logContext.js';
 
 // 视频轮询相关常量
 const VIDEO_POLL_INTERVAL_MS = 5000;
@@ -204,7 +204,9 @@ export async function generateVideoWithVolcEngine(
       requestTime: Date.now() - startTime,
       status: 'success',
       pollAttempts,
-      taskId
+      taskId,
+      requestBody: sanitizeAICallBody({ prompt: params.prompt?.slice(0, 200), mode: 'volcengine-video', aspectRatio: params.aspectRatio, duration: params.duration }),
+      responseBody: sanitizeAICallBody({ videoUrl }),
     });
     
     return videoUrl;
@@ -216,7 +218,8 @@ export async function generateVideoWithVolcEngine(
       requestTime: Date.now() - startTime,
       status: error.message?.includes('超时') ? 'timeout' : 'failed',
       errorMessage: error.message,
-      pollAttempts
+      pollAttempts,
+      requestBody: sanitizeAICallBody({ prompt: params.prompt?.slice(0, 200), mode: 'volcengine-video', aspectRatio: params.aspectRatio, duration: params.duration }),
     });
     throw error;
   }
@@ -263,13 +266,23 @@ async function waitForGRSaiVideo(
   onProgress?: (progress: number) => void
 ): Promise<string> {
   const startTime = Date.now();
+  // 指数退避：初始 2s，每次增长 1.5x，上限 15s
+  let intervalMs = 2000;
+  const maxIntervalMs = 15000;
+  const backoffFactor = 1.5;
+
   while (Date.now() - startTime < maxWaitTime) {
     const response = await fetch(`${config.baseUrl}/v1/video/result`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${config.apiKey}` },
       body: JSON.stringify({ id })
     });
-    if (!response.ok) { await new Promise(resolve => setTimeout(resolve, 5000)); continue; }
+    if (!response.ok) {
+      // 请求失败时也使用退避间隔
+      await new Promise(resolve => setTimeout(resolve, intervalMs));
+      intervalMs = Math.min(intervalMs * backoffFactor, maxIntervalMs);
+      continue;
+    }
     const result: GRSaiVideoResult = await response.json();
     
     if (result.progress !== undefined) {
@@ -278,7 +291,10 @@ async function waitForGRSaiVideo(
     
     if (result.status === 'succeeded' && result.results?.length) return result.results[0].url;
     if (result.status === 'failed') throw new Error(`GRSai 视频生成失败: ${result.failure_reason || result.error || '未知错误'}`);
-    await new Promise(resolve => setTimeout(resolve, 5000));
+
+    // 任务仍在进行，按退避间隔等待
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
+    intervalMs = Math.min(intervalMs * backoffFactor, maxIntervalMs);
   }
   throw new Error('GRSai 视频生成超时');
 }
@@ -302,7 +318,9 @@ export async function generateVideoWithGRSai(
       endpoint: `${baseUrl}/v1/video/sora-video`,
       requestTime: Date.now() - startTime,
       status: 'success',
-      taskId: id
+      taskId: id,
+      requestBody: sanitizeAICallBody({ model, prompt: params.prompt?.slice(0, 200), aspectRatio: params.aspectRatio, duration: params.duration }),
+      responseBody: sanitizeAICallBody({ videoUrl }),
     });
     
     return videoUrl;
@@ -313,7 +331,8 @@ export async function generateVideoWithGRSai(
       endpoint: `${baseUrl}/v1/video/sora-video`,
       requestTime: Date.now() - startTime,
       status: error.message?.includes('超时') ? 'timeout' : 'failed',
-      errorMessage: error.message
+      errorMessage: error.message,
+      requestBody: sanitizeAICallBody({ model, prompt: params.prompt?.slice(0, 200), aspectRatio: params.aspectRatio, duration: params.duration }),
     });
     throw error;
   }
@@ -357,7 +376,9 @@ export async function generateVideoWithWan26(
       model,
       endpoint: `${alphaBaseUrl}/videos`,
       requestTime: Date.now() - startTime,
-      status: 'success'
+      status: 'success',
+      requestBody: sanitizeAICallBody({ model, prompt: params.prompt?.slice(0, 200), aspect_ratio: aspectRatio, duration }),
+      responseBody: sanitizeAICallBody({ videoUrl }),
     });
     
     return videoUrl;
@@ -368,7 +389,8 @@ export async function generateVideoWithWan26(
       endpoint: `${alphaBaseUrl}/videos`,
       requestTime: Date.now() - startTime,
       status: error.message?.includes('超时') ? 'timeout' : 'failed',
-      errorMessage: error.message
+      errorMessage: error.message,
+      requestBody: sanitizeAICallBody({ model, prompt: params.prompt?.slice(0, 200), aspect_ratio: aspectRatio, duration }),
     });
     throw error;
   }
@@ -381,19 +403,30 @@ async function waitForWan26Video(
   onProgress?: (status: string) => void
 ): Promise<string> {
   const startTime = Date.now();
+  // 指数退避：初始 3s，每次增长 1.5x，上限 20s
+  let intervalMs = 3000;
+  const maxIntervalMs = 20000;
+  const backoffFactor = 1.5;
+
   while (Date.now() - startTime < maxWaitMs) {
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
     const pollResponse = await fetch(pollingUrl, {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'HTTP-Referer': 'https://video-generator.app', 'X-Title': 'Video Generator' }
     });
-    if (!pollResponse.ok) continue;
+    if (!pollResponse.ok) {
+      intervalMs = Math.min(intervalMs * backoffFactor, maxIntervalMs);
+      continue;
+    }
     const pollResult = await pollResponse.json();
     
     onProgress?.(pollResult.status);
     
     if (pollResult.status === 'completed' && pollResult.unsigned_urls?.length) return pollResult.unsigned_urls[0];
     if (['failed', 'cancelled', 'expired'].includes(pollResult.status)) throw new Error(`Wan 2.6 视频生成失败: ${pollResult.error || pollResult.status}`);
+
+    // 任务仍在进行，递增退避间隔
+    intervalMs = Math.min(intervalMs * backoffFactor, maxIntervalMs);
   }
   throw new Error('Wan 2.6 视频生成超时（超过 10 分钟）');
 }
@@ -433,7 +466,9 @@ export async function generateVideoWithOpenRouter(
         model,
         endpoint: `${baseUrl}/chat/completions`,
         requestTime: Date.now() - startTime,
-        status: 'success'
+        status: 'success',
+        requestBody: sanitizeAICallBody({ model, prompt: params.prompt?.slice(0, 200), modalities: ['video'] }),
+        responseBody: sanitizeAICallBody({ videoUrl: result.data.url }),
       });
       return result.data.url;
     }
@@ -443,7 +478,8 @@ export async function generateVideoWithOpenRouter(
       endpoint: `${baseUrl}/chat/completions`,
       requestTime: Date.now() - startTime,
       status: 'failed',
-      errorMessage: 'OpenRouter 返回缺少任务 ID'
+      errorMessage: 'OpenRouter 返回缺少任务 ID',
+      requestBody: sanitizeAICallBody({ model, prompt: params.prompt?.slice(0, 200), modalities: ['video'] }),
     });
     throw new Error('OpenRouter 返回缺少任务 ID');
   }
@@ -457,7 +493,9 @@ export async function generateVideoWithOpenRouter(
       endpoint: `${baseUrl}/chat/completions`,
       requestTime: Date.now() - startTime,
       status: 'success',
-      taskId
+      taskId,
+      requestBody: sanitizeAICallBody({ model, prompt: params.prompt?.slice(0, 200), modalities: ['video'] }),
+      responseBody: sanitizeAICallBody({ videoUrl }),
     });
     
     return videoUrl;
@@ -469,7 +507,8 @@ export async function generateVideoWithOpenRouter(
       requestTime: Date.now() - startTime,
       status: error.message?.includes('超时') ? 'timeout' : 'failed',
       errorMessage: error.message,
-      taskId
+      taskId,
+      requestBody: sanitizeAICallBody({ model, prompt: params.prompt?.slice(0, 200), modalities: ['video'] }),
     });
     throw error;
   }
@@ -483,19 +522,31 @@ async function waitForOpenRouterVideo(
   onProgress?: (status: string) => void
 ): Promise<string> {
   const startTime = Date.now();
+  // 指数退避：初始 3s，每次增长 1.5x，上限 15s
+  let intervalMs = 3000;
+  const maxIntervalMs = 15000;
+  const backoffFactor = 1.5;
+
   while (Date.now() - startTime < maxWaitTime) {
     const response = await fetch(`${baseUrl}/video/generations/${taskId}`, {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'HTTP-Referer': 'https://video-generator.app', 'X-Title': 'Video Generator' }
     });
-    if (!response.ok) { await new Promise(resolve => setTimeout(resolve, 5000)); continue; }
+    if (!response.ok) {
+      await new Promise(resolve => setTimeout(resolve, intervalMs));
+      intervalMs = Math.min(intervalMs * backoffFactor, maxIntervalMs);
+      continue;
+    }
     const result = await response.json();
     
     onProgress?.(result.status);
     
     if (result.status === 'completed' && result.data?.url) return result.data.url;
     if (result.status === 'failed') throw new Error(`OpenRouter 视频生成失败: ${result.error?.message || '未知错误'}`);
-    await new Promise(resolve => setTimeout(resolve, 5000));
+
+    // 任务仍在进行，递增退避间隔
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
+    intervalMs = Math.min(intervalMs * backoffFactor, maxIntervalMs);
   }
   throw new Error('OpenRouter 视频生成超时');
 }

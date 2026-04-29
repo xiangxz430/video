@@ -415,8 +415,8 @@ const EpisodeEdit: React.FC = () => {
 
     try {
       // 检查是否有视频生成配置
-      if (!videoConfig || !videoConfig.apiKey) {
-        throw new Error('请先在设置中配置视频生成 API');
+      if (!videoConfig) {
+        throw new Error('未找到视频生成配置，请在服务端管理后台检查 Provider 配置');
       }
 
       // 构建提示词：结合分镜描述和角色信息
@@ -519,14 +519,16 @@ const EpisodeEdit: React.FC = () => {
     addLog(`🤖 使用模型: ${availableImageModels.find(m => m.id === selectedImageModel)?.name || selectedImageModel}`);
     addLog(`🔧 API配置: ${imageConfig?.provider || 'unknown'}, 模型: ${imageConfig?.model || selectedImageModel}`);
 
-    // 获取剧本名用于图片存储路径
-    let scriptName = '未命名剧本';
-    if (currentEpisode?.scriptId) {
+    // 获取剧本名用于图片存储路径（优先使用内存中的 currentScript，避免重复查询数据库）
+    let scriptName = currentScript?.title || '未命名剧本';
+    if (currentEpisode?.scriptId && !currentScript?.title) {
       const script = await getScript(currentEpisode.scriptId);
       if (script?.title) {
         scriptName = script.title;
-        addLog(`📖 剧本名: ${scriptName}`);
       }
+    }
+    if (scriptName !== '未命名剧本') {
+      addLog(`📖 剧本名: ${scriptName}`);
     }
 
     const shot = segment.shots[shotIndex];
@@ -869,14 +871,16 @@ const EpisodeEdit: React.FC = () => {
     addLog(`🤖 使用模型: ${availableImageModels.find(m => m.id === selectedImageModel)?.name || selectedImageModel}`);
     addLog(`🔧 API配置: ${imageConfig?.provider || 'unknown'}, 模型: ${imageConfig?.model || selectedImageModel}`);
 
-    // 获取剧本名用于图片存储路径
-    let scriptName = '未命名剧本';
-    if (currentEpisode?.scriptId) {
+    // 获取剧本名用于图片存储路径（优先使用内存中的 currentScript，避免重复查询数据库）
+    let scriptName = currentScript?.title || '未命名剧本';
+    if (currentEpisode?.scriptId && !currentScript?.title) {
       const script = await getScript(currentEpisode.scriptId);
       if (script?.title) {
         scriptName = script.title;
-        addLog(`📖 剧本名: ${scriptName}`);
       }
+    }
+    if (scriptName !== '未命名剧本') {
+      addLog(`📖 剧本名: ${scriptName}`);
     }
 
     const shot = segment.shots[shotIndex];
@@ -1404,8 +1408,15 @@ const EpisodeEdit: React.FC = () => {
     setShowImagePicker(true);
   };
 
-  // 加载历史生成图片
-  const loadGeneratedImageHistory = async () => {
+  // 加载历史生成图片（带防抖，避免短时间内重复查询数据库）
+  const lastImageHistoryLoadRef = useRef(0);
+  const IMAGE_HISTORY_LOAD_INTERVAL = 5000; // 5秒内不重复加载
+  const loadGeneratedImageHistory = async (forceRefresh = false) => {
+    const now = Date.now();
+    if (!forceRefresh && now - lastImageHistoryLoadRef.current < IMAGE_HISTORY_LOAD_INTERVAL) {
+      return; // 5秒内不重复加载
+    }
+    lastImageHistoryLoadRef.current = now;
     try {
       const history = await getGeneratedImageHistory(100);
       setGeneratedImageHistory(history);
@@ -1894,8 +1905,8 @@ const EpisodeEdit: React.FC = () => {
       return;
     }
 
-    if (!videoConfig || !videoConfig.apiKey) {
-      alert('请先在设置中配置视频生成 API');
+    if (!videoConfig) {
+      alert('未找到视频生成配置，请在服务端管理后台检查 Provider 配置');
       return;
     }
 
@@ -2210,8 +2221,8 @@ const EpisodeEdit: React.FC = () => {
       return;
     }
 
-    if (!videoConfig || !videoConfig.apiKey) {
-      alert('请先在设置中配置视频生成 API');
+    if (!videoConfig) {
+      alert('未找到视频生成配置，请在服务端管理后台检查 Provider 配置');
       return;
     }
 

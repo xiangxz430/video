@@ -22,10 +22,11 @@ export function recordAICall(call: AIApiCall): void {
 
 const AI_TRUNCATABLE_FIELDS = new Set([
   'script', 'content', 'episodeContent', 'prompt',
-  'referenceImage', 'firstFrameImage', 'lastFrameImage',
+  'firstFrameImage', 'lastFrameImage',
   'firstFrameRefImage', 'lastFrameRefImage',
   'image', 'imageUrl', 'videoUrl', 'url',
 ]);
+// referenceImage 由下方逻辑单独处理（完全替换为占位符，不截断）
 
 const AI_TRUNCATE_LIMIT = 300;
 const AI_ARRAY_LIMIT = 5;
@@ -57,7 +58,27 @@ export function sanitizeAICallBody(body: any, depth: number = 0): any {
     const result: Record<string, any> = {};
     for (const key of Object.keys(body)) {
       const value = body[key];
-      if (typeof value === 'string' && AI_TRUNCATABLE_FIELDS.has(key) && value.length > AI_TRUNCATE_LIMIT) {
+      if (key === 'referenceImage') {
+        // 完全替换 base64 内容，不保留任何 base64 数据
+        if (typeof value === 'string') {
+          result[key] = '[base64 image, see referenceImageMeta]';
+        } else if (Array.isArray(value)) {
+          if (value.length > 0 && typeof value[0] === 'object' && value[0] !== null && 'data' in value[0]) {
+            // 数组中是含 data 字段的对象 → 保留其他字段，替换 data
+            result[key] = value.map((item: any, idx: number) => ({
+              ...item,
+              data: `[base64 image #${idx + 1}, see referenceImageMeta]`,
+            }));
+          } else {
+            result[key] = [`[base64 image x ${value.length}, see referenceImageMeta]`];
+          }
+        } else if (typeof value === 'object' && value !== null && 'data' in value) {
+          // 单个含 data 字段的对象 → 保留其他字段，替换 data
+          result[key] = { ...value, data: '[base64 image, see referenceImageMeta]' };
+        } else {
+          result[key] = sanitizeAICallBody(value, depth + 1);
+        }
+      } else if (typeof value === 'string' && AI_TRUNCATABLE_FIELDS.has(key) && value.length > AI_TRUNCATE_LIMIT) {
         result[key] = value.slice(0, AI_TRUNCATE_LIMIT) + '...[truncated]';
       } else {
         result[key] = sanitizeAICallBody(value, depth + 1);

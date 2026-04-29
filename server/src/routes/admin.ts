@@ -12,7 +12,7 @@ import {
   getStatsByModel,
   getSystemInfo,
 } from '../services/statsService.js';
-import { queryLogs, getLogById } from '../services/logService.js';
+import { queryLogs, getLogById, deleteLog } from '../services/logService.js';
 import { maskKey } from '../services/apiKeyService.js';
 
 const router = Router();
@@ -150,6 +150,26 @@ router.get('/logs/:id', async (req, res) => {
   } catch (error) {
     console.error('获取日志详情失败:', error);
     res.status(500).json({ success: false, error: '获取日志详情失败' });
+  }
+});
+
+// DELETE /api/admin/logs/:id - 删除单条日志
+router.delete('/logs/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deleted = await deleteLog(id);
+
+    if (!deleted) {
+      return res.status(404).json({
+        success: false,
+        error: '日志不存在',
+      });
+    }
+
+    res.json({ success: true, message: '日志已删除' });
+  } catch (error) {
+    console.error('删除日志失败:', error);
+    res.status(500).json({ success: false, error: '删除日志失败' });
   }
 });
 

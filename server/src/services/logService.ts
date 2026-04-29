@@ -52,9 +52,16 @@ export async function queryLogs(params: QueryLogsParams): Promise<QueryLogsResul
   const collection = getLogsCollection();
 
   // 并行执行 count 和 find（MongoDB 自动利用索引）
+  // 使用 projection 排除大字段，加速列表查询
   const [total, logs] = await Promise.all([
     collection.countDocuments(filter),
     collection.find(filter)
+      .project({
+        requestBody: 0,
+        responseBody: 0,
+        'aiApiCalls.requestBody': 0,
+        'aiApiCalls.responseBody': 0,
+      })
       .sort({ timestamp: -1 })
       .skip((page - 1) * pageSize)
       .limit(pageSize)
@@ -69,6 +76,14 @@ export async function queryLogs(params: QueryLogsParams): Promise<QueryLogsResul
  */
 export async function getLogById(id: string): Promise<RequestLog | null> {
   return getLogsCollection().findOne({ id });
+}
+
+/**
+ * 删除单条日志
+ */
+export async function deleteLog(id: string): Promise<boolean> {
+  const result = await getLogsCollection().deleteOne({ id });
+  return result.deletedCount === 1;
 }
 
 /**

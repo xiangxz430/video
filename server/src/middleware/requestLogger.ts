@@ -50,11 +50,12 @@ function extractRequestSummary(body: any): string {
 // 需要截断的超长字段名（与 logContext.ts 的 AI_TRUNCATABLE_FIELDS 保持同步）
 const TRUNCATABLE_FIELDS = new Set([
   'script', 'content', 'prompt', 'description',
-  'referenceImage', 'episodeContent',
+  'episodeContent',
   'firstFrameImage', 'lastFrameImage',
   'firstFrameRefImage', 'lastFrameRefImage',
   'image', 'imageUrl', 'videoUrl', 'url',
 ]);
+// referenceImage 由 stripBase64FromReferenceImage 单独处理，不在此截断
 
 const TRUNCATE_LIMIT = 200;
 const ARRAY_ELEMENT_LIMIT = 10;
@@ -104,16 +105,44 @@ function extractApiKey(req: Request): string {
 // ========== 请求日志中间件 ==========
 
 /**
- * 如果请求体包含 referenceImageMeta，将 referenceImage 中的 base64 数据
- * 替换为文件名引用，避免日志溢出。base64 仅用于 AI 调用，日志只需知道文件来源。
+ * 将 referenceImage 中的 base64 数据替换为可读占位符，避免日志溢出。
+ * 支持多种 referenceImage 格式：
+ *   - string: 直接 base64 字符串
+ *   - string[]: 多张 base64 字符串
+ *   - object with `data` field: { data: base64, ... }
+ *   - array of objects: [{ data: base64, ... }, ...]
+ * - 有 referenceImageMeta 时：用文件名替换，便于定位原始文件
+ * - 无 referenceImageMeta 时：用占位提示替换，标明图片数量
  */
 function stripBase64FromReferenceImage(body: Record<string, any>): Record<string, any> {
-  if (!body || !body.referenceImageMeta || !Array.isArray(body.referenceImageMeta)) return body;
-  if (body.referenceImageMeta.length === 0) return body;
+  if (!body || !body.referenceImage) return body;
 
-  const meta = body.referenceImageMeta;
-  // 用文件名替换 base64 内容，保留 referenceImage 字段结构便于调试
-  body.referenceImage = meta.map(m => `[${m.fileName}]`);
+  const ref = body.referenceImage;
+
+  if (body.referenceImageMeta && Array.isArray(body.referenceImageMeta) && body.referenceImageMeta.length > 0) {
+    // 有 meta 信息，用文件名替换 base64 内容
+    body.referenceImage = body.referenceImageMeta.map(m => `[${m.fileName}]`);
+  } else if (typeof ref === 'string') {
+    // 单张图 base64 字符串
+    body.referenceImage = '[base64 image, see referenceImageMeta]';
+  } else if (Array.isArray(ref)) {
+    // 数组：判断元素是字符串还是对象
+    const count = ref.length;
+    if (count > 0 && typeof ref[0] === 'object' && ref[0] !== null && 'data' in ref[0]) {
+      // 数组中是含 data 字段的对象 → 保留其他字段，替换 data
+      body.referenceImage = ref.map((item: any, idx: number) => ({
+        ...item,
+        data: `[base64 image #${idx + 1}, see referenceImageMeta]`,
+      }));
+    } else {
+      // 数组中是纯 base64 字符串
+      body.referenceImage = [`[base64 image x ${count}, see referenceImageMeta]`];
+    }
+  } else if (typeof ref === 'object' && ref !== null && 'data' in ref) {
+    // 单个含 data 字段的对象 → 保留其他字段，替换 data
+    body.referenceImage = { ...ref, data: '[base64 image, see referenceImageMeta]' };
+  }
+
   return body;
 }
 

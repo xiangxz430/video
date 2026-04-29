@@ -242,6 +242,11 @@ export const api = {
   async getLogDetail(id: string): Promise<RequestLog> {
     return request(`/api/admin/logs/${id}`);
   },
+  async deleteLog(id: string): Promise<void> {
+    return request(`/api/admin/logs/${id}`, {
+      method: 'DELETE',
+    });
+  },
 
   // 配置
   async getProviders(): Promise<ProviderConfig[]> {

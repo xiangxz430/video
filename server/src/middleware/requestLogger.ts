@@ -103,6 +103,20 @@ function extractApiKey(req: Request): string {
 
 // ========== 请求日志中间件 ==========
 
+/**
+ * 如果请求体包含 referenceImageMeta，将 referenceImage 中的 base64 数据
+ * 替换为文件名引用，避免日志溢出。base64 仅用于 AI 调用，日志只需知道文件来源。
+ */
+function stripBase64FromReferenceImage(body: Record<string, any>): Record<string, any> {
+  if (!body || !body.referenceImageMeta || !Array.isArray(body.referenceImageMeta)) return body;
+  if (body.referenceImageMeta.length === 0) return body;
+
+  const meta = body.referenceImageMeta;
+  // 用文件名替换 base64 内容，保留 referenceImage 字段结构便于调试
+  body.referenceImage = meta.map(m => `[${m.fileName}]`);
+  return body;
+}
+
 export function requestLogger(req: Request, res: Response, next: NextFunction) {
   const startTime = Date.now();
   const reqPath = req.path || req.url;
@@ -116,7 +130,8 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
     return next();
   }
 
-  const requestBody = sanitizeBody(req.body);
+  const requestBodyRaw = sanitizeBody(req.body);
+  const requestBody = stripBase64FromReferenceImage(requestBodyRaw);
 
   // 拦截 res.json() 捕获响应体
   const originalJson = res.json.bind(res);

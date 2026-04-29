@@ -209,6 +209,10 @@ const CharactersAndScenes: React.FC = () => {
           };
           if (imageGenMode === 'image-ref' && char.imageUrl) {
             params.referenceImage = char.imageUrl;
+            params.referenceImageMeta = [{
+              fileName: char.imageUrl.split('/').pop() || char.imageUrl,
+              filePath: char.imageUrl,
+            }];
           }
           // 页面日志：显示当前生成进度
           setBatchError(`🔄 正在为「${char.name}」生成图片...`);
@@ -292,6 +296,10 @@ const CharactersAndScenes: React.FC = () => {
           };
           if (imageGenMode === 'image-ref' && scene.imageUrl) {
             params.referenceImage = scene.imageUrl;
+            params.referenceImageMeta = [{
+              fileName: scene.imageUrl.split('/').pop() || scene.imageUrl,
+              filePath: scene.imageUrl,
+            }];
           }
           // 页面日志：显示当前生成进度
           setBatchError(`🔄 正在为「${scene.name}」生成场景图...`);

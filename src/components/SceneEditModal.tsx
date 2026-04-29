@@ -691,11 +691,11 @@ const SceneEditModal: React.FC<SceneEditModalProps> = ({ scene, onClose, onSave 
               )}
             </div>
             {/* 下载按钮 */}
-            {imageUrl && (
+            {imageUrl && isLocalFilePath(imageUrl) && (
               <button
                 onClick={() => {
                   if (imageUrl) {
-                    exportImageFile(imageUrl, `场景_${name}_${Date.now()}.png`);
+                    exportImageFile(imageUrl);
                   }
                 }}
                 className="w-full mt-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center justify-center space-x-2"

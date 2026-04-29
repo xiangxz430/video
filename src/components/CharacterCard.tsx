@@ -53,12 +53,12 @@ const CharacterCard: React.FC<CharacterCardProps> = ({ character, onClick }) => 
               </div>
             )}
             {/* 下载按钮 */}
-            {character.imagePath && (
+            {character.imagePath && isLocalFilePath(character.imagePath) && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   if (character.imagePath) {
-                    exportImageFile(character.imagePath, `角色_${character.name}_${Date.now()}.png`);
+                    exportImageFile(character.imagePath);
                   }
                 }}
                 className="absolute top-1 right-1 p-1.5 bg-white/90 hover:bg-white rounded-full shadow-sm transition z-10"

@@ -48,6 +48,8 @@ export interface ImageGenParams {
   size?: string;
   aspectRatio?: string;
   referenceImage?: string | string[];
+  /** 参考图元数据（仅用于日志，不参与 AI 调用） */
+  referenceImageMeta?: { fileName: string; filePath: string }[];
   provider?: string;
   style?: string;
 }
@@ -97,6 +99,7 @@ export async function generateImage(params: ImageGenParams, config?: any): Promi
     model: params.model,
     provider: params.provider,
     referenceImage: params.referenceImage,
+    referenceImageMeta: params.referenceImageMeta,
     aspectRatio: params.aspectRatio,
     size: params.size,
     style: params.style

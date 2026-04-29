@@ -296,20 +296,41 @@ export async function exportVideo(videoData: Uint8Array, defaultName?: string): 
   }
 }
 
+// 根据文件魔数检测图片格式并返回扩展名
+function detectImageExtension(bytes: Uint8Array): string {
+  if (bytes.length >= 12) {
+    if (bytes[0] === 0x89 && bytes[1] === 0x50) return 'png';
+    if (bytes[0] === 0xFF && bytes[1] === 0xD8) return 'jpg';
+    if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[8] === 0x57 && bytes[9] === 0x45) return 'webp';
+    if (bytes[0] === 0x47 && bytes[1] === 0x49) return 'gif';
+  }
+  return 'png';
+}
+
 // 导出图片文件到用户选择的位置
 export async function exportImageFile(sourcePath: string, defaultName?: string): Promise<string | null> {
   try {
+    // 先读取源文件，检测真实图片格式
+    let fileData: Uint8Array;
+    try {
+      fileData = await readFile(sourcePath);
+    } catch {
+      console.error('exportImageFile: 无法读取源文件（可能是远程URL）:', sourcePath);
+      return null;
+    }
+
+    // 根据魔数检测真实格式，自动确定扩展名
+    const ext = detectImageExtension(fileData);
+
     const savePath = await save({
-      defaultPath: defaultName || 'image_export.png',
+      defaultPath: defaultName || `image_export.${ext}`,
       filters: [
         { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }
       ]
     });
-    
+
     if (!savePath) return null;
-    
-    // 读取源文件并写入到目标位置
-    const fileData = await readFile(sourcePath);
+
     await writeFile(savePath, fileData);
     return savePath;
   } catch (error) {

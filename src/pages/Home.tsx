@@ -247,19 +247,24 @@ const Home: React.FC = () => {
 
       // 处理参考图
       let referenceImage: string | string[] | undefined;
+      let referenceImageMeta: { fileName: string; filePath: string }[] | undefined;
       if (refImages.length > 0) {
         addImageLog(`📷 处理 ${refImages.length} 张参考图...`);
-        const base64Images = await Promise.all(
+        const processed = await Promise.all(
           refImages.map(async (img) => {
             if (isLocalFilePath(img)) {
               const base64 = await localImageToBase64(img);
-              return base64?.split(',')[1] || base64 || '';
+              return { base64: base64 || '', filePath: img };
             }
-            return img;
+            return { base64: img, filePath: img };
           })
         );
-        const validImages = base64Images.filter(img => img !== '');
-        referenceImage = validImages.length === 1 ? validImages[0] : validImages;
+        const validEntries = processed.filter(e => e.base64 !== '');
+        referenceImage = validEntries.length === 1 ? validEntries[0].base64 : validEntries.map(e => e.base64);
+        referenceImageMeta = validEntries.map(e => ({
+          fileName: e.filePath.split('/').pop() || e.filePath,
+          filePath: e.filePath,
+        }));
         addImageLog('✅ 参考图处理完成');
       }
 
@@ -269,7 +274,8 @@ const Home: React.FC = () => {
         provider: modelInfo?.provider,
         model: selectedImageModel,
         aspectRatio: selectedAspectRatio,
-        referenceImage
+        referenceImage,
+        referenceImageMeta,
       });
 
       addImageLog('✅ 图片生成成功!');

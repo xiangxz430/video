@@ -1,4 +1,5 @@
 import { generateVolcSignature } from './apiClients.js';
+import { recordAICall } from './logContext.js';
 // 视频轮询相关常量
 const VIDEO_POLL_INTERVAL_MS = 5000;
 const VIDEO_MAX_POLL_RETRIES = 120;
@@ -139,8 +140,38 @@ export async function waitForVolcVideo(taskId, config, maxRetries = VIDEO_MAX_PO
     throw new Error('视频生成超时');
 }
 export async function generateVideoWithVolcEngine(params, config) {
-    const { taskId } = await submitVolcVideoTask(params, config);
-    return await waitForVolcVideo(taskId, config);
+    const startTime = Date.now();
+    const model = config.model || 'doubao-seedance-1-5-pro-251215';
+    const baseUrl = config.baseUrl || DEFAULT_VOLC_ARK_BASE_URL;
+    let pollAttempts = 0;
+    try {
+        const { taskId } = await submitVolcVideoTask(params, config);
+        const videoUrl = await waitForVolcVideo(taskId, config, VIDEO_MAX_POLL_RETRIES, VIDEO_POLL_INTERVAL_MS, (_status, attempt) => {
+            pollAttempts = attempt;
+        });
+        recordAICall({
+            provider: 'volcengine',
+            model,
+            endpoint: `${baseUrl}/contents/generations/tasks`,
+            requestTime: Date.now() - startTime,
+            status: 'success',
+            pollAttempts,
+            taskId
+        });
+        return videoUrl;
+    }
+    catch (error) {
+        recordAICall({
+            provider: 'volcengine',
+            model,
+            endpoint: `${baseUrl}/contents/generations/tasks`,
+            requestTime: Date.now() - startTime,
+            status: error.message?.includes('超时') ? 'timeout' : 'failed',
+            errorMessage: error.message,
+            pollAttempts
+        });
+        throw error;
+    }
 }
 async function submitGRSaiVideoTask(params, config) {
     const { prompt, firstFrameImage, referenceImages, aspectRatio = '16:9', duration = 10 } = params;
@@ -188,11 +219,37 @@ async function waitForGRSaiVideo(id, config, maxWaitTime = 300000, onProgress) {
     throw new Error('GRSai 视频生成超时');
 }
 export async function generateVideoWithGRSai(params, config, onProgress) {
-    const { id } = await submitGRSaiVideoTask(params, config);
-    return await waitForGRSaiVideo(id, config, 300000, onProgress);
+    const startTime = Date.now();
+    const model = 'sora-2';
+    const baseUrl = config.baseUrl || 'https://grsai.dakka.com.cn';
+    try {
+        const { id } = await submitGRSaiVideoTask(params, config);
+        const videoUrl = await waitForGRSaiVideo(id, config, 300000, onProgress);
+        recordAICall({
+            provider: 'grsai',
+            model,
+            endpoint: `${baseUrl}/v1/video/sora-video`,
+            requestTime: Date.now() - startTime,
+            status: 'success',
+            taskId: id
+        });
+        return videoUrl;
+    }
+    catch (error) {
+        recordAICall({
+            provider: 'grsai',
+            model,
+            endpoint: `${baseUrl}/v1/video/sora-video`,
+            requestTime: Date.now() - startTime,
+            status: error.message?.includes('超时') ? 'timeout' : 'failed',
+            errorMessage: error.message
+        });
+        throw error;
+    }
 }
 // ========== Wan 2.6 视频生成 ==========
 export async function generateVideoWithWan26(params, config, onProgress) {
+    const startTime = Date.now();
     const { prompt, firstFrameImage, lastFrameImage, referenceImages, aspectRatio = '16:9', duration = 5 } = params;
     const alphaBaseUrl = 'https://openrouter.ai/api/alpha';
     const model = config.model || 'alibaba/wan-2.6';
@@ -219,7 +276,28 @@ export async function generateVideoWithWan26(params, config, onProgress) {
     const pollingUrl = submitResult.polling_url;
     if (!pollingUrl)
         throw new Error('Wan 2.6 返回缺少 polling_url');
-    return await waitForWan26Video(pollingUrl, config.apiKey, 600000, onProgress);
+    try {
+        const videoUrl = await waitForWan26Video(pollingUrl, config.apiKey, 600000, onProgress);
+        recordAICall({
+            provider: 'openrouter',
+            model,
+            endpoint: `${alphaBaseUrl}/videos`,
+            requestTime: Date.now() - startTime,
+            status: 'success'
+        });
+        return videoUrl;
+    }
+    catch (error) {
+        recordAICall({
+            provider: 'openrouter',
+            model,
+            endpoint: `${alphaBaseUrl}/videos`,
+            requestTime: Date.now() - startTime,
+            status: error.message?.includes('超时') ? 'timeout' : 'failed',
+            errorMessage: error.message
+        });
+        throw error;
+    }
 }
 async function waitForWan26Video(pollingUrl, apiKey, maxWaitMs = 600000, onProgress) {
     const startTime = Date.now();
@@ -242,6 +320,7 @@ async function waitForWan26Video(pollingUrl, apiKey, maxWaitMs = 600000, onProgr
 }
 // ========== OpenRouter 视频生成 ==========
 export async function generateVideoWithOpenRouter(params, config, onProgress) {
+    const startTime = Date.now();
     const { prompt, firstFrameImage, referenceImages, aspectRatio = '16:9', duration = 10 } = params;
     const baseUrl = config.baseUrl || 'https://openrouter.ai/api/v1';
     const model = config.model || 'minimax/video-01';
@@ -266,11 +345,50 @@ export async function generateVideoWithOpenRouter(params, config, onProgress) {
         throw new Error(`OpenRouter 错误: ${result.error.message || JSON.stringify(result.error)}`);
     const taskId = result.id || result.data?.id;
     if (!taskId) {
-        if (result.data?.url)
+        if (result.data?.url) {
+            recordAICall({
+                provider: 'openrouter',
+                model,
+                endpoint: `${baseUrl}/chat/completions`,
+                requestTime: Date.now() - startTime,
+                status: 'success'
+            });
             return result.data.url;
+        }
+        recordAICall({
+            provider: 'openrouter',
+            model,
+            endpoint: `${baseUrl}/chat/completions`,
+            requestTime: Date.now() - startTime,
+            status: 'failed',
+            errorMessage: 'OpenRouter 返回缺少任务 ID'
+        });
         throw new Error('OpenRouter 返回缺少任务 ID');
     }
-    return await waitForOpenRouterVideo(taskId, baseUrl, config.apiKey, duration, onProgress);
+    try {
+        const videoUrl = await waitForOpenRouterVideo(taskId, baseUrl, config.apiKey, duration, onProgress);
+        recordAICall({
+            provider: 'openrouter',
+            model,
+            endpoint: `${baseUrl}/chat/completions`,
+            requestTime: Date.now() - startTime,
+            status: 'success',
+            taskId
+        });
+        return videoUrl;
+    }
+    catch (error) {
+        recordAICall({
+            provider: 'openrouter',
+            model,
+            endpoint: `${baseUrl}/chat/completions`,
+            requestTime: Date.now() - startTime,
+            status: error.message?.includes('超时') ? 'timeout' : 'failed',
+            errorMessage: error.message,
+            taskId
+        });
+        throw error;
+    }
 }
 async function waitForOpenRouterVideo(taskId, baseUrl, apiKey, maxWaitTime = 300000, onProgress) {
     const startTime = Date.now();

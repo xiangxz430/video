@@ -1,4 +1,4 @@
-import { RequestLog } from '../middleware/requestLogger.js';
+import { RequestLog } from '../types/index.js';
 export interface QueryLogsParams {
     page?: number;
     pageSize?: number;

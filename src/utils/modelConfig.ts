@@ -30,7 +30,7 @@ export function getEnabledModels(
     const nameLower = config.name.toLowerCase();
     const hasCapability = nameLower.includes(capability.toLowerCase());
     
-    if (hasCapability && config.apiKey && config.apiKey.trim()) {
+    if (hasCapability && config.model && config.model.trim()) {
       const modelId = config.model || '';
       const uniqueKey = `${config.provider}_${modelId}`;
       
@@ -476,16 +476,16 @@ export function getBestConfig(
       'scriptGeneration',
     ];
     for (const name of fallbacks) {
-      const config = apiConfigs.find(c => c.name === name && c.apiKey?.trim());
+      const config = apiConfigs.find(c => c.name === name && c.model?.trim());
       if (config) {
         if (modelId) return { ...config, model: modelId };
         return config;
       }
     }
-    // 回退：找任何有 apiKey 的脚本相关配置
+    // 回退：找任何有 model 的脚本相关配置
     const anyScriptConfig = apiConfigs.find(c => 
       (c.name.toLowerCase().includes('script') || c.name.toLowerCase().includes('generation')) &&
-      c.apiKey?.trim()
+      c.model?.trim()
     );
     if (anyScriptConfig) {
       if (modelId) return { ...anyScriptConfig, model: modelId };
@@ -497,15 +497,15 @@ export function getBestConfig(
     // 图片生成：优先 imageGeneration → any image generation config
     if (modelId) {
       // 优先找指定模型
-      const modelConfig = apiConfigs.find(c => c.model === modelId && c.apiKey?.trim());
+      const modelConfig = apiConfigs.find(c => c.model === modelId && c.model?.trim());
       if (modelConfig) return { ...modelConfig, model: modelId };
     }
-    const config = apiConfigs.find(c => c.name === 'imageGeneration' && c.apiKey?.trim());
+    const config = apiConfigs.find(c => c.name === 'imageGeneration' && c.model?.trim());
     if (config) {
       return modelId ? { ...config, model: modelId } : config;
     }
     const anyImageConfig = apiConfigs.find(c => 
-      c.name.toLowerCase().includes('imagegeneration') && c.apiKey?.trim()
+      c.name.toLowerCase().includes('imagegeneration') && c.model?.trim()
     );
     if (anyImageConfig) {
       return modelId ? { ...anyImageConfig, model: modelId } : anyImageConfig;
@@ -515,15 +515,15 @@ export function getBestConfig(
   if (capability === 'videoGeneration') {
     // 视频生成：优先 videoGeneration → any video generation config
     if (modelId) {
-      const modelConfig = apiConfigs.find(c => c.model === modelId && c.apiKey?.trim());
+      const modelConfig = apiConfigs.find(c => c.model === modelId && c.model?.trim());
       if (modelConfig) return { ...modelConfig, model: modelId };
     }
-    const config = apiConfigs.find(c => c.name === 'videoGeneration' && c.apiKey?.trim());
+    const config = apiConfigs.find(c => c.name === 'videoGeneration' && c.model?.trim());
     if (config) {
       return modelId ? { ...config, model: modelId } : config;
     }
     const anyVideoConfig = apiConfigs.find(c => 
-      c.name.toLowerCase().includes('videogeneration') && c.apiKey?.trim()
+      c.name.toLowerCase().includes('videogeneration') && c.model?.trim()
     );
     if (anyVideoConfig) {
       return modelId ? { ...anyVideoConfig, model: modelId } : anyVideoConfig;

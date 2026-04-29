@@ -117,11 +117,14 @@ const Settings: React.FC = () => {
 
     setTestResult({ status: 'testing' });
     try {
-      const isHealthy = await checkHealth();
-      if (isHealthy) {
-        setTestResult({ status: 'success', message: '连接成功' });
+      // 先保存配置到数据库，确保测试和后续使用的是同一份配置
+      await saveServerConfig(serverUrl.trim().replace(/\/+$/, ''), apiKey.trim());
+      
+      const result = await checkHealth(serverUrl.trim(), apiKey.trim());
+      if (result.ok) {
+        setTestResult({ status: 'success', message: '连接成功（已自动保存）' });
       } else {
-        setTestResult({ status: 'error', message: '服务端未响应' });
+        setTestResult({ status: 'error', message: result.error || '服务端未响应' });
       }
     } catch (error: any) {
       setTestResult({
@@ -201,7 +204,7 @@ const Settings: React.FC = () => {
               服务端密钥
             </label>
             <input
-              type="password"
+              type="text"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder="sk-xxxxxxxxxxxxxxxx"

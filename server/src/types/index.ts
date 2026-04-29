@@ -145,3 +145,42 @@ export interface ScriptGenerationResult {
 // ========== 分镜进度回调 ==========
 
 export type StoryboardProgressCallback = (message: string, step?: number, totalSteps?: number) => void;
+
+// ========== AI API 调用详情 ==========
+
+export interface AIApiCall {
+  provider: string;       // AI服务提供商
+  model: string;          // 模型名称
+  endpoint: string;       // 调用的API端点URL
+  requestTime: number;    // 单次调用耗时(ms)
+  tokenUsage?: {
+    prompt: number;       // 输入token
+    completion: number;   // 输出token
+    total: number;        // 总token
+  };
+  status: 'success' | 'failed' | 'timeout';
+  errorMessage?: string;
+  // 轮询类任务（图片/视频生成）的额外信息
+  pollAttempts?: number;  // 轮询次数
+  taskId?: string;        // 异步任务ID
+}
+
+// ========== 请求日志 ==========
+
+export interface RequestLog {
+  id: string;
+  timestamp: string;
+  method: string;
+  endpoint: string;        // 如 /api/image/generate
+  function: string;        // 功能分类: script/storyboard/image/video
+  provider: string;        // 从请求体 body.provider 提取
+  model: string;           // 从请求体 body.model 提取
+  apiKeyMasked: string;    // 脱敏的 API Key
+  statusCode: number;
+  duration: number;        // 耗时(ms)
+  error: string | null;    // 错误信息
+  requestSummary: string;  // 请求摘要（如 prompt 的前100字）
+  requestBody?: Record<string, any>;    // 完整请求体（脱敏后）
+  responseBody?: Record<string, any>;   // 完整响应体
+  aiApiCalls?: AIApiCall[];             // AI API调用详情列表
+}

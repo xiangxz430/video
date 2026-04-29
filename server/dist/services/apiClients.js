@@ -1,4 +1,5 @@
 import { getProviderConfig } from '../config/index.js';
+import { recordAICall } from './logContext.js';
 // 脚本生成 Provider 优先级列表（按优先级排序）
 export const SCRIPT_PROVIDERS = [
     {
@@ -152,6 +153,7 @@ async function callOpenAICompatibleOnce(config, messages) {
     };
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 300000);
+    const startTime = Date.now();
     try {
         console.log(`\n========== AI 调用开始 ==========`);
         console.log(`🤖 模型: ${config.provider}/${model}`);
@@ -164,7 +166,6 @@ async function callOpenAICompatibleOnce(config, messages) {
         };
         console.log(`📦 请求体大小: ${JSON.stringify(requestBody).length} 字节`);
         console.log(`\n⏳ 等待 AI 响应...\n`);
-        const startTime = Date.now();
         const response = await fetch(`${baseUrl}/chat/completions`, {
             method: 'POST',
             headers,
@@ -197,11 +198,33 @@ async function callOpenAICompatibleOnce(config, messages) {
         console.log(`  输出 token: ${data.usage?.completion_tokens || 'N/A'}`);
         console.log(`  返回内容长度: ${content.length} 字符`);
         console.log(`\n========== AI 调用完成 ==========\n`);
+        recordAICall({
+            provider: config.provider || 'unknown',
+            model,
+            endpoint: `${baseUrl}/chat/completions`,
+            requestTime: responseTime,
+            tokenUsage: data.usage ? {
+                prompt: data.usage.prompt_tokens || 0,
+                completion: data.usage.completion_tokens || 0,
+                total: data.usage.total_tokens || 0
+            } : undefined,
+            status: 'success'
+        });
         return content;
     }
     catch (error) {
         clearTimeout(timeoutId);
         console.error('\n❌ AI 调用失败:', error);
+        recordAICall({
+            provider: config.provider || 'unknown',
+            model,
+            endpoint: `${baseUrl}/chat/completions`,
+            requestTime: Date.now() - startTime,
+            status: error.name === 'AbortError' ? 'timeout' : 'failed',
+            errorMessage: error.name === 'AbortError'
+                ? `${config.provider || 'API'} 请求超时（300秒）`
+                : (error?.message || error?.toString() || '未知错误')
+        });
         if (error.name === 'AbortError') {
             throw new Error(`${config.provider || 'API'} 请求超时（300秒）`);
         }
@@ -288,6 +311,7 @@ async function callOpenAIStreamingOnce(config, messages, onChunk) {
     };
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 300000);
+    const startTime = Date.now();
     try {
         console.log(`\n========== AI 流式调用开始 ==========`);
         console.log(`🤖 模型: ${config.provider}/${model}`);
@@ -355,11 +379,28 @@ async function callOpenAIStreamingOnce(config, messages, onChunk) {
         console.log(`📊 接收 chunk 数: ${chunkCount}`);
         console.log(`📝 返回内容长度: ${fullContent.length} 字符`);
         console.log(`\n========== AI 流式调用完成 ==========\n`);
+        recordAICall({
+            provider: config.provider || 'unknown',
+            model,
+            endpoint: `${baseUrl}/chat/completions`,
+            requestTime: Date.now() - startTime,
+            status: 'success'
+        });
         return fullContent;
     }
     catch (error) {
         clearTimeout(timeoutId);
         console.error('\n❌ AI 流式调用失败:', error);
+        recordAICall({
+            provider: config.provider || 'unknown',
+            model,
+            endpoint: `${baseUrl}/chat/completions`,
+            requestTime: Date.now() - startTime,
+            status: error.name === 'AbortError' ? 'timeout' : 'failed',
+            errorMessage: error.name === 'AbortError'
+                ? `${config.provider || 'API'} 请求超时（300秒）`
+                : (error?.message || error?.toString() || '未知错误')
+        });
         if (error.name === 'AbortError') {
             throw new Error(`${config.provider || 'API'} 请求超时（300秒）`);
         }

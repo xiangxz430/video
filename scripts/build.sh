@@ -21,7 +21,8 @@ SRC_TAURI_DIR="$PROJECT_DIR/src-tauri"
 
 # 默认参数
 DEBUG_MODE=""
-BUNDLE_TARGET="--target universal-apple-darwin"
+BUNDLE_TARGET="--target aarch64-apple-darwin"
+OUTPUT_ARCH="aarch64"
 
 # 解析参数
 for arg in "$@"; do
@@ -30,9 +31,15 @@ for arg in "$@"; do
       DEBUG_MODE="--debug"
       echo "[构建] 调试模式"
       ;;
+    --universal)
+      BUNDLE_TARGET="--target universal-apple-darwin"
+      OUTPUT_ARCH="universal"
+      echo "[构建] Universal (x86_64 + arm64)"
+      ;;
     --help|-h)
-      echo "用法: $0 [--debug]"
-      echo "  --debug     调试构建"
+      echo "用法: $0 [--debug] [--universal]"
+      echo "  --debug      调试构建"
+      echo "  --universal  Universal 构建 (默认 M2 单架构)"
       exit 0
       ;;
   esac
@@ -72,10 +79,7 @@ echo ""
 echo "[步骤 2/3] Tauri 打包 → src-tauri/target/"
 echo "-------------------------------------------"
 
-TARGET_ARG=""
-if [ "$BUNDLE_TARGET" = "--target universal-apple-darwin" ]; then
-  TARGET_ARG="--target universal-apple-darwin"
-fi
+TARGET_ARG="$BUNDLE_TARGET"
 
 cd "$SRC_TAURI_DIR"
 npx tauri build $DEBUG_MODE $TARGET_ARG --bundles app
@@ -92,8 +96,10 @@ if [ -n "$DEBUG_MODE" ]; then
 fi
 
 # 根据目标架构选择正确的目录
-if [ "$BUNDLE_TARGET" = "--target universal-apple-darwin" ]; then
+if [ "$OUTPUT_ARCH" = "universal" ]; then
   BUNDLE_DIR="$SRC_TAURI_DIR/target/universal-apple-darwin/$PROFILE/bundle/macos"
+elif [ "$OUTPUT_ARCH" = "aarch64" ]; then
+  BUNDLE_DIR="$SRC_TAURI_DIR/target/aarch64-apple-darwin/$PROFILE/bundle/macos"
 else
   BUNDLE_DIR="$SRC_TAURI_DIR/target/$PROFILE/bundle/macos"
 fi
@@ -116,7 +122,7 @@ fi
 APP_NAME=$(basename "$APP_BUNDLE")
 
 # 生成输出文件名: Video Generator_2.3.8_universal.app
-OUTPUT_NAME="Video Generator_${VERSION}_universal.app"
+OUTPUT_NAME="Video Generator_${VERSION}_${OUTPUT_ARCH}.app"
 OUTPUT_PATH="$RELEASE_DIR/$OUTPUT_NAME"
 
 # 清理旧的同名文件
@@ -129,6 +135,14 @@ fi
 echo "   源文件: $APP_BUNDLE"
 echo "   目标: $OUTPUT_PATH"
 cp -R "$APP_BUNDLE" "$OUTPUT_PATH"
+
+# 添加 App Transport Security 例外（允许 HTTP 连接外部服务器）
+echo "   添加 ATS 例外（允许 HTTP 连接）..."
+PLIST="$OUTPUT_PATH/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict" "$PLIST" 2>/dev/null
+/usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsArbitraryLoads bool true" "$PLIST" 2>/dev/null || \
+  /usr/libexec/PlistBuddy -c "Set :NSAppTransportSecurity:NSAllowsArbitraryLoads true" "$PLIST"
+echo "   ATS 例外已添加"
 
 # ========== 完成 ==========
 echo ""

@@ -159,23 +159,26 @@ const SceneEditModal: React.FC<SceneEditModalProps> = ({ scene, onClose, onSave 
       addLog(`📏 比例: ${selectedAspectRatio}`);
       
       const imageConfig = await getImageConfigForModel(selectedModel, availableModels);
-      if (!imageConfig || !imageConfig.apiKey) {
-        addLog('❌ 错误: 请先在设置页面配置图片生成 API');
-        alert('请先在设置页面配置图片生成 API');
-        return;
-      }
+      // 服务端代理架构：API Key 由服务端管理，无需客户端校验
+      const provider = imageConfig?.provider || 'unknown';
       
       // 根据 provider 选择不同的 API
       let apiName = '火山方舟 API';
-      if (imageConfig.provider === 'grsai') {
+      if (provider === 'grsai') {
         apiName = 'Grsai API';
-      } else if (imageConfig.provider === 'openrouter') {
+      } else if (provider === 'openrouter') {
         apiName = 'OpenRouter API';
       }
       addLog(`📤 发送请求到 ${apiName}...`);
       
       // configWithModel 已包含正确的 provider 和 model
-      const configWithModel = imageConfig;
+      const configWithModel = imageConfig || {
+        name: `${provider}_imageGeneration`,
+        provider,
+        model: selectedModel || '',
+        apiKey: '',
+        baseUrl: ''
+      };
       
       // 场景图提示词（使用统一构建函数，四视角转台图）
       const scenePrompt = buildScenePrompt(description);
@@ -281,10 +284,7 @@ const SceneEditModal: React.FC<SceneEditModalProps> = ({ scene, onClose, onSave 
     setIsGeneratingFromRef(true);
     try {
       const imageConfig = await getImageConfigForModel(selectedModel, availableModels);
-      if (!imageConfig || !imageConfig.apiKey) {
-        alert('请先在设置页面配置图片生成 API');
-        return;
-      }
+      // 服务端代理架构：API Key 由服务端管理
       
       // 获取选中的模型信息
       const selectedModelInfo = availableModels.find(m => m.id === selectedModel);

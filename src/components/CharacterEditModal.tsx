@@ -174,14 +174,16 @@ const CharacterEditModal: React.FC<CharacterEditModalProps> = ({ character, onCl
       // 获取选中的模型信息
       const selectedModelInfo = availableModels.find(m => m.id === selectedModel);
       
-      if (!imageConfig || !imageConfig.apiKey) {
-        addLog('❌ 错误: 请先在设置页面配置图片生成 API');
-        alert('请先在设置页面配置图片生成 API');
-        return;
-      }
+      // 服务端代理架构：API Key 由服务端管理，无需客户端校验
       
       // configWithModel 已包含正确的 provider 和 model
-      const configWithModel = imageConfig;
+      const configWithModel = imageConfig || {
+        name: `${selectedModelInfo?.provider || 'unknown'}_imageGeneration`,
+        provider: selectedModelInfo?.provider || 'unknown',
+        model: selectedModel || '',
+        apiKey: '',
+        baseUrl: selectedModelInfo?.baseUrl || ''
+      };
       
       addLog(`⚙️ API配置: ${configWithModel.provider}, ${configWithModel.model}`);
       
@@ -288,10 +290,7 @@ const CharacterEditModal: React.FC<CharacterEditModalProps> = ({ character, onCl
     setLogs([]);
     try {
       const imageConfig = await getImageConfigForModel(selectedModel, availableModels);
-      if (!imageConfig || !imageConfig.apiKey) {
-        alert('请先在设置页面配置图片生成 API');
-        return;
-      }
+      // 服务端代理架构：API Key 由服务端管理
       
       // 获取选中的模型信息
       const selectedModelInfo = availableModels.find(m => m.id === selectedModel);
@@ -419,10 +418,7 @@ const CharacterEditModal: React.FC<CharacterEditModalProps> = ({ character, onCl
     setLogs([]);
     try {
       const imageConfig = await getImageConfigForModel(selectedModel, availableModels);
-      if (!imageConfig || !imageConfig.apiKey) {
-        alert('请先在设置页面配置图片生成 API');
-        return;
-      }
+      // 服务端代理架构：API Key 由服务端管理
       
       // 获取选中的模型信息
       const selectedModelInfo = availableModels.find(m => m.id === selectedModel);
@@ -545,10 +541,7 @@ const CharacterEditModal: React.FC<CharacterEditModalProps> = ({ character, onCl
     setLogs([]);
     try {
       const imageConfig = await getImageConfigForModel(selectedModel, availableModels);
-      if (!imageConfig || !imageConfig.apiKey) {
-        alert('请先在设置页面配置图片生成 API');
-        return;
-      }
+      // 服务端代理架构：API Key 由服务端管理
       
       // 获取选中的模型信息
       const selectedModelInfo = availableModels.find(m => m.id === selectedModel);

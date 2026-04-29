@@ -1,4 +1,5 @@
-import { RequestLog, getAllLogs, getLogById as getLogByIdFromMiddleware } from '../middleware/requestLogger.js';
+import { RequestLog } from '../types/index.js';
+import { getAllLogs, getLogById as getLogByIdFromMiddleware } from '../middleware/requestLogger.js';
 
 // 分页查询日志参数
 export interface QueryLogsParams {

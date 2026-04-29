@@ -107,6 +107,19 @@ export interface ModelStats {
   avgDuration: number;
 }
 
+// AI API 调用类型
+export interface AIApiCall {
+  provider: string;
+  model: string;
+  endpoint: string;
+  requestTime: number;
+  tokenUsage?: { prompt: number; completion: number; total: number };
+  status: 'success' | 'failed' | 'timeout';
+  errorMessage?: string;
+  pollAttempts?: number;
+  taskId?: string;
+}
+
 // 日志类型
 export interface RequestLog {
   id: string;
@@ -119,6 +132,9 @@ export interface RequestLog {
   apiKeyMasked: string;
   requestSummary?: string;
   errorMessage?: string;
+  requestBody?: Record<string, any>;
+  responseBody?: Record<string, any>;
+  aiApiCalls?: AIApiCall[];
 }
 
 export interface QueryLogsResult {

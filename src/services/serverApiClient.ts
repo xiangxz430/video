@@ -3,7 +3,21 @@
  * 封装所有对服务端的 HTTP 请求，替代原来直接调用 AI Provider
  */
 
-import { fetch } from '@tauri-apps/plugin-http';
+// 使用全局 fetch（通过 WebView 网络栈，绕过 Tauri HTTP 插件的 scope 限制）
+const httpFetch = globalThis.fetch.bind(globalThis);
+
+// 清理 URL 末尾的斜杠和空白，避免双斜杠导致 404
+function cleanUrl(url: string): string {
+  return url.trim().replace(/\/+$/, '');
+}
+
+// 构建请求 URL，防止双斜杠
+function buildApiUrl(serverUrl: string, endpoint: string): string {
+  const base = cleanUrl(serverUrl);
+  const url = `${base}${endpoint}`;
+  // 将路径中的连续斜杠替换为单斜杠（保留 :// 协议部分）
+  return url.replace(/([^:\/])\/+/, '$1/');
+}
 import { getApiConfig, updateApiConfig } from './database';
 
 // 服务端配置类型
@@ -41,6 +55,9 @@ export async function saveServerConfig(serverUrl: string, apiKey: string): Promi
   ]);
 }
 
+// 默认超时时间（5分钟，图片/视频生成耗时长）
+const DEFAULT_TIMEOUT = 300_000;
+
 // 基础请求封装
 async function serverFetch(endpoint: string, body: any, options?: { timeout?: number }): Promise<any> {
   const { serverUrl, apiKey } = await getServerConfig();
@@ -49,17 +66,23 @@ async function serverFetch(endpoint: string, body: any, options?: { timeout?: nu
     throw new Error('服务端地址未配置，请先在设置页面配置服务端');
   }
   
-  const url = `${serverUrl}${endpoint}`;
+  const url = buildApiUrl(serverUrl, endpoint);
+  const timeout = options?.timeout || DEFAULT_TIMEOUT;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
   
   try {
-    const response = await fetch(url, {
+    const response = await httpFetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': apiKey ? `Bearer ${apiKey}` : ''
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal: controller.signal
     });
+    
+    clearTimeout(timeoutId);
     
     if (!response.ok) {
       const errorText = await response.text();
@@ -75,6 +98,10 @@ async function serverFetch(endpoint: string, body: any, options?: { timeout?: nu
     
     return response.json();
   } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error(`请求超时（${timeout / 1000}秒），服务端处理时间过长`);
+    }
     if (error.message?.includes('fetch')) {
       throw new Error(`无法连接到服务端: ${serverUrl}，请检查服务端是否运行`);
     }
@@ -98,15 +125,18 @@ async function serverSSE<T>(
     throw new Error('服务端地址未配置，请先在设置页面配置服务端');
   }
   
-  const url = `${serverUrl}${endpoint}`;
+  const url = buildApiUrl(serverUrl, endpoint);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT);
   
-  const response = await fetch(url, {
+  const response = await httpFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': apiKey ? `Bearer ${apiKey}` : ''
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: controller.signal
   });
   
   if (!response.ok) {
@@ -174,6 +204,7 @@ async function serverSSE<T>(
     }
   } finally {
     reader.releaseLock();
+    clearTimeout(timeoutId);
   }
   
   if (!result) {
@@ -341,10 +372,10 @@ export async function getApiUsageStats(): Promise<{
     throw new Error('服务端地址未配置');
   }
   
-  const url = `${serverUrl}/api/stats/usage`;
+  const url = buildApiUrl(serverUrl, '/api/stats/usage');
   
   try {
-    const response = await fetch(url, {
+    const response = await httpFetch(url, {
       method: 'GET',
       headers: {
         'Authorization': apiKey ? `Bearer ${apiKey}` : ''
@@ -373,22 +404,38 @@ export async function getApiUsageStats(): Promise<{
   }
 }
 
-export async function checkHealth(): Promise<boolean> {
+export async function checkHealth(serverUrlOverride?: string, apiKeyOverride?: string): Promise<{ ok: boolean; error?: string }> {
   try {
-    const { serverUrl, apiKey } = await getServerConfig();
+    let serverUrl: string;
+    let apiKey: string;
     
-    if (!serverUrl) return false;
+    if (serverUrlOverride) {
+      // 使用调用方传入的值（用于 Settings 页面测试连接）
+      serverUrl = serverUrlOverride;
+      apiKey = apiKeyOverride || '';
+    } else {
+      const config = await getServerConfig();
+      serverUrl = config.serverUrl;
+      apiKey = config.apiKey;
+    }
     
-    const response = await fetch(`${serverUrl}/api/health`, {
+    if (!serverUrl) return { ok: false, error: '服务端地址未配置' };
+    
+    const response = await httpFetch(buildApiUrl(serverUrl, '/api/health'), {
       method: 'GET',
       headers: {
         'Authorization': apiKey ? `Bearer ${apiKey}` : ''
       }
     });
     
-    return response.ok;
-  } catch {
-    return false;
+    if (!response.ok) {
+      return { ok: false, error: `服务端返回状态码: ${response.status}` };
+    }
+    
+    return { ok: true };
+  } catch (e: any) {
+    const msg = e?.message || e?.toString() || '未知错误';
+    return { ok: false, error: msg };
   }
 }
 

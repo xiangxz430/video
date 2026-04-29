@@ -69,6 +69,9 @@ function buildScenePrompt(description, referenceMode = false) {
 }
 // POST /api/image/generate - 生成图片
 router.post('/generate', async (req, res) => {
+    // 图片生成耗时较长（可能60秒+），必须关闭请求超时
+    req.setTimeout(0);
+    res.setTimeout(0);
     try {
         const { prompt, provider, model, referenceImage, aspectRatio, size } = req.body;
         if (!prompt) {
@@ -93,6 +96,9 @@ router.post('/generate', async (req, res) => {
 });
 // POST /api/image/character - 生成角色图片
 router.post('/character', async (req, res) => {
+    // 图片生成耗时较长，关闭请求超时
+    req.setTimeout(0);
+    res.setTimeout(0);
     try {
         const { description, referenceMode, provider, model } = req.body;
         if (!description) {
@@ -114,6 +120,9 @@ router.post('/character', async (req, res) => {
 });
 // POST /api/image/scene - 生成场景图片
 router.post('/scene', async (req, res) => {
+    // 图片生成耗时较长，关闭请求超时
+    req.setTimeout(0);
+    res.setTimeout(0);
     try {
         const { description, referenceMode, provider, model } = req.body;
         if (!description) {

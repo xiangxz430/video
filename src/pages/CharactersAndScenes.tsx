@@ -190,10 +190,7 @@ const CharactersAndScenes: React.FC = () => {
 
     try {
       const imageConfig = await getApiConfig('imageGeneration');
-      if (!imageConfig || !imageConfig.apiKey) {
-        setBatchError('请先在设置页面配置图片生成 API Key');
-        return;
-      }
+      // 服务端代理架构：API Key 由服务端管理
 
       for (let i = 0; i < ungenerated.length; i++) {
         const char = ungenerated[i];
@@ -207,8 +204,8 @@ const CharactersAndScenes: React.FC = () => {
           const params: ImageGenParams = { 
             prompt: characterPrompt,
             size: '2K',  // 默认使用 2K 分辨率
-            provider: imageConfig.provider,  // 透传用户在客户端配置的图片提供商
-            model: imageConfig.model
+            provider: imageConfig?.provider || 'volcengine',  // 透传用户在客户端配置的图片提供商
+            model: imageConfig?.model || ''
           };
           if (imageGenMode === 'image-ref' && char.imageUrl) {
             params.referenceImage = char.imageUrl;
@@ -229,7 +226,7 @@ const CharactersAndScenes: React.FC = () => {
                 await saveImageHistory('character', char.id, char.name, imageUrl, localPath, char.description);
                 console.log(`角色 ${char.name} 图片已保存到历史`);
                 // 也保存到统一历史
-                await addGeneratedImageHistory(localPath, char.description, imageConfig.model, '2K', '16:9', 'character', char.id);
+                await addGeneratedImageHistory(localPath, char.description, imageConfig?.model || '', '2K', '16:9', 'character', char.id);
               } catch (historyError) {
                 console.error(`角色 ${char.name} 保存图片历史失败:`, historyError);
               }
@@ -268,10 +265,7 @@ const CharactersAndScenes: React.FC = () => {
 
     try {
       const imageConfig = await getApiConfig('imageGeneration');
-      if (!imageConfig || !imageConfig.apiKey) {
-        setBatchError('请先在设置页面配置图片生成 API Key');
-        return;
-      }
+      // 服务端代理架构：API Key 由服务端管理
 
       for (let i = 0; i < ungenerated.length; i++) {
         const scene = ungenerated[i];
@@ -293,8 +287,8 @@ const CharactersAndScenes: React.FC = () => {
           const params: ImageGenParams = { 
             prompt: scenePrompt,
             size: '2K',  // 默认使用 2K 分辨率
-            provider: imageConfig.provider,  // 透传用户在客户端配置的图片提供商
-            model: imageConfig.model
+            provider: imageConfig?.provider || 'volcengine',  // 透传用户在客户端配置的图片提供商
+            model: imageConfig?.model || ''
           };
           if (imageGenMode === 'image-ref' && scene.imageUrl) {
             params.referenceImage = scene.imageUrl;
@@ -315,7 +309,7 @@ const CharactersAndScenes: React.FC = () => {
                 await saveImageHistory('scene', scene.id, scene.name, imageUrl, localPath, scene.description);
                 console.log(`场景 ${scene.name} 图片已保存到历史`);
                 // 也保存到统一历史
-                await addGeneratedImageHistory(localPath, scene.description, imageConfig.model, '2K', '16:9', 'scene', scene.id);
+                await addGeneratedImageHistory(localPath, scene.description, imageConfig?.model || '', '2K', '16:9', 'scene', scene.id);
               } catch (historyError) {
                 console.error(`场景 ${scene.name} 保存图片历史失败:`, historyError);
               }

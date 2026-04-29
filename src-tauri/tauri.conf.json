@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Video Generator",
-  "version": "2.3.8",
+  "version": "2.3.9",
   "identifier": "com.openclaw.video-generator",
   "build": {
     "frontendDist": "../build",

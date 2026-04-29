@@ -237,12 +237,9 @@ const Home: React.FC = () => {
         configName = 'imageGeneration_openrouter';
       }
       
+      // 服务端代理架构：API Key 由服务端管理，无需客户端校验
+      // 直接获取配置信息即可
       const imageConfig = await getApiConfig(configName);
-
-      if (!imageConfig || !imageConfig.apiKey) {
-        alert(`请先在设置页面配置 ${modelInfo?.name} 的 API Key`);
-        return;
-      }
 
       addImageLog(`🤖 使用模型: ${modelInfo?.name}`);
       addImageLog(`📐 分辨率: ${selectedImageSize}`);
@@ -347,17 +344,14 @@ const Home: React.FC = () => {
       } else if (provider === 'openrouter') {
         // OpenRouter: 优先获取视频配置，否则获取图片配置
         videoConfig = await getApiConfig('videoGeneration_openrouter');
-        if (!videoConfig?.apiKey) {
+        if (!videoConfig?.model) {
           videoConfig = await getApiConfig('imageGeneration_openrouter');
         }
       } else {
         videoConfig = await getApiConfig('videoGeneration');
       }
       
-      if (!videoConfig || !videoConfig.apiKey) {
-        alert(`请先在设置页面配置 ${provider === 'grsai' ? 'GRSai' : provider === 'openrouter' ? 'OpenRouter' : '火山方舟'} 视频生成 API`);
-        return;
-      }
+      // 服务端代理架构：API Key 由服务端管理，无需客户端校验
 
       // 使用选择的模型
       const configWithModel = { ...videoConfig, model: selectedVideoModel, provider };

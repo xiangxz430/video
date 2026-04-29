@@ -19,7 +19,7 @@ import { clientStatsRouter } from './routes/clientStats.js';
 import { config } from './config/index.js';
 import { initializeFromEnv } from './services/apiKeyService.js';
 const app = express();
-app.use(helmet());
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 // 初始化：从环境变量导入默认 API Key
@@ -50,7 +50,12 @@ app.use('/api/image', imageRouter);
 app.use('/api/video', videoRouter);
 // 客户端统计路由（需要认证）
 app.use('/api/stats', clientStatsRouter);
-app.listen(config.port, () => {
+const server = app.listen(config.port, () => {
     console.log(`Server running on port ${config.port}`);
     console.log(`Health check: http://localhost:${config.port}/api/health`);
 });
+// 设置请求超时为5分钟（图片/视频生成耗时长）
+server.timeout = 300_000;
+server.requestTimeout = 300_000;
+server.headersTimeout = 310_000;
+server.keepAliveTimeout = 310_000;

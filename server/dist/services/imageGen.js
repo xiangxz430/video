@@ -1,28 +1,54 @@
+import { recordAICall } from './logContext.js';
 export async function submitWanxTask(config, prompt) {
     const baseUrl = config.baseUrl || 'https://dashscope.aliyuncs.com/api/v1';
-    const response = await fetch(`${baseUrl}/services/aigc/text2image/image-synthesis`, {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${config.apiKey}`,
-            'Content-Type': 'application/json',
-            'X-DashScope-Async': 'enable'
-        },
-        body: JSON.stringify({
-            model: config.model || 'wanx-v1',
-            input: { prompt },
-            parameters: {
-                size: '768*1024',
-                n: 1,
-                style: '<auto>'
-            }
-        })
-    });
-    if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`图片生成任务提交失败 (${response.status}): ${errText}`);
+    const model = config.model || 'wanx-v1';
+    const endpoint = `${baseUrl}/services/aigc/text2image/image-synthesis`;
+    const startTime = Date.now();
+    try {
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${config.apiKey}`,
+                'Content-Type': 'application/json',
+                'X-DashScope-Async': 'enable'
+            },
+            body: JSON.stringify({
+                model,
+                input: { prompt },
+                parameters: {
+                    size: '768*1024',
+                    n: 1,
+                    style: '<auto>'
+                }
+            })
+        });
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`图片生成任务提交失败 (${response.status}): ${errText}`);
+        }
+        const data = await response.json();
+        const taskId = data.output.task_id;
+        recordAICall({
+            provider: 'qwen',
+            model,
+            endpoint,
+            requestTime: Date.now() - startTime,
+            status: 'success',
+            taskId
+        });
+        return taskId;
     }
-    const data = await response.json();
-    return data.output.task_id;
+    catch (error) {
+        recordAICall({
+            provider: 'qwen',
+            model,
+            endpoint,
+            requestTime: Date.now() - startTime,
+            status: 'failed',
+            errorMessage: error.message || '未知错误'
+        });
+        throw error;
+    }
 }
 async function queryWanxTask(config, taskId) {
     const baseUrl = config.baseUrl || 'https://dashscope.aliyuncs.com/api/v1';
@@ -45,12 +71,33 @@ async function queryWanxTask(config, taskId) {
     return null;
 }
 export async function waitForWanxTask(config, taskId, maxRetries = 30) {
+    const startTime = Date.now();
+    const baseUrl = config.baseUrl || 'https://dashscope.aliyuncs.com/api/v1';
     for (let i = 0; i < maxRetries; i++) {
         await new Promise(resolve => setTimeout(resolve, 3000));
         const url = await queryWanxTask(config, taskId);
-        if (url)
+        if (url) {
+            recordAICall({
+                provider: 'qwen',
+                model: config.model || 'wanx-v1',
+                endpoint: `${baseUrl}/tasks/${taskId}`,
+                requestTime: Date.now() - startTime,
+                status: 'success',
+                pollAttempts: i + 1,
+                taskId
+            });
             return url;
+        }
     }
+    recordAICall({
+        provider: 'qwen',
+        model: config.model || 'wanx-v1',
+        endpoint: `${baseUrl}/tasks/${taskId}`,
+        requestTime: Date.now() - startTime,
+        status: 'timeout',
+        pollAttempts: maxRetries,
+        taskId
+    });
     throw new Error('图片生成超时');
 }
 // ========== 火山方舟 Seedream - 图片生成 ==========
@@ -86,8 +133,12 @@ async function callVolcImageAPI(config, path, method, body) {
     return await response.json();
 }
 async function generateVolcImage(params, config) {
+    const startTime = Date.now();
+    const model = params.model || config.model || 'doubao-seedream-5-0-260128';
+    const baseUrl = config.baseUrl || 'https://ark.cn-beijing.volces.com/api/v3';
+    const endpoint = `${baseUrl}/images/generations`;
     const requestBody = {
-        model: params.model || config.model || 'doubao-seedream-5-0-260128',
+        model,
         prompt: params.prompt,
         response_format: 'url'
     };
@@ -137,8 +188,23 @@ async function generateVolcImage(params, config) {
     const data = await callVolcImageAPI(config, '/images/generations', 'POST', JSON.stringify(requestBody));
     if (data.data && data.data.length > 0 && data.data[0].url) {
         console.log('火山方舟图片生成成功，URL:', data.data[0].url);
+        recordAICall({
+            provider: 'volcengine',
+            model,
+            endpoint,
+            requestTime: Date.now() - startTime,
+            status: 'success'
+        });
         return data.data[0].url;
     }
+    recordAICall({
+        provider: 'volcengine',
+        model,
+        endpoint,
+        requestTime: Date.now() - startTime,
+        status: 'failed',
+        errorMessage: '图片生成失败：响应中未找到图片 URL'
+    });
     throw new Error('图片生成失败：响应中未找到图片 URL');
 }
 export async function generateImageWithVolcEngine(params, config) {
@@ -148,8 +214,10 @@ export async function generateImageWithVolcEngine(params, config) {
 export async function generateImageWithOpenRouter(params, config) {
     const { prompt, aspectRatio, size } = params;
     const model = config.model || 'black-forest-labs/flux.2-pro';
-    console.log('OpenRouter 图片生成请求:', { model, promptLength: prompt.length });
     const baseUrl = config.baseUrl || 'https://openrouter.ai/api/v1';
+    const endpoint = `${baseUrl}/chat/completions`;
+    const startTime = Date.now();
+    console.log('OpenRouter 图片生成请求:', { model, promptLength: prompt.length });
     const requestBody = {
         model: model,
         messages: [
@@ -192,9 +260,24 @@ export async function generateImageWithOpenRouter(params, config) {
         const imageUrl = result.choices[0].message.images[0]?.image_url?.url;
         if (imageUrl) {
             console.log('OpenRouter 图片生成成功');
+            recordAICall({
+                provider: 'openrouter',
+                model,
+                endpoint,
+                requestTime: Date.now() - startTime,
+                status: 'success'
+            });
             return imageUrl;
         }
     }
+    recordAICall({
+        provider: 'openrouter',
+        model,
+        endpoint,
+        requestTime: Date.now() - startTime,
+        status: 'failed',
+        errorMessage: 'OpenRouter 返回格式错误,未找到生成的图片'
+    });
     throw new Error('OpenRouter 返回格式错误,未找到生成的图片');
 }
 export async function generateImageWithGrsai(params, apiKey, baseUrl = 'https://grsai.dakka.com.cn') {
@@ -213,61 +296,141 @@ export async function generateImageWithGrsai(params, apiKey, baseUrl = 'https://
     const apiEndpoint = `${baseUrl}/v1/draw/nano-banana`;
     console.log('🔑 Grsai API Key:', apiKey ? `${apiKey.substring(0, 10)}...` : '未配置');
     console.log('📡 Grsai API Endpoint:', apiEndpoint);
+    const startTime = Date.now();
     if (useStream) {
+        const controller = new AbortController();
+        const streamTimeout = setTimeout(() => controller.abort(), 300_000);
         const response = await fetch(apiEndpoint, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody)
+            body: JSON.stringify(requestBody),
+            signal: controller.signal
         });
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
         const reader = response.body?.getReader();
         if (!reader) {
+            clearTimeout(streamTimeout);
             throw new Error('无法获取响应流');
         }
-        const decoder = new TextDecoder();
-        let buffer = '';
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done)
-                break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-            for (const line of lines) {
-                const trimmedLine = line.trim();
-                if (!trimmedLine)
-                    continue;
-                let jsonStr = trimmedLine;
-                if (jsonStr.startsWith('data:')) {
-                    jsonStr = jsonStr.substring(5).trim();
-                }
-                if (jsonStr) {
-                    try {
-                        const data = JSON.parse(jsonStr);
-                        if (data.progress !== undefined && onProgress) {
-                            onProgress(data.progress);
-                        }
-                        if (data.status === 'succeeded' && data.results && data.results.length > 0) {
-                            const result = data.results[0];
-                            const imageUrl = result.url || result.content;
-                            if (imageUrl) {
-                                console.log('Grsai 图片生成成功');
-                                return imageUrl;
+        try {
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let lastParsedData = null;
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done)
+                    break;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+                for (const line of lines) {
+                    const trimmedLine = line.trim();
+                    if (!trimmedLine)
+                        continue;
+                    let jsonStr = trimmedLine;
+                    if (jsonStr.startsWith('data:')) {
+                        jsonStr = jsonStr.substring(5).trim();
+                    }
+                    if (jsonStr) {
+                        try {
+                            const data = JSON.parse(jsonStr);
+                            lastParsedData = data;
+                            if (data.progress !== undefined && onProgress) {
+                                onProgress(data.progress);
+                            }
+                            if (data.status === 'succeeded') {
+                                // 兼容多种返回格式：results数组 或 直接返回url/content
+                                let imageUrl = null;
+                                if (data.results && data.results.length > 0) {
+                                    const result = data.results[0];
+                                    imageUrl = result.url || result.content || result.image_url;
+                                }
+                                else if (data.url) {
+                                    imageUrl = data.url;
+                                }
+                                else if (data.content) {
+                                    imageUrl = data.content;
+                                }
+                                else if (data.data?.url) {
+                                    imageUrl = data.data.url;
+                                }
+                                else if (data.data?.results?.[0]) {
+                                    imageUrl = data.data.results[0].url || data.data.results[0].content;
+                                }
+                                if (imageUrl) {
+                                    console.log('Grsai 图片生成成功');
+                                    recordAICall({
+                                        provider: 'grsai',
+                                        model,
+                                        endpoint: apiEndpoint,
+                                        requestTime: Date.now() - startTime,
+                                        status: 'success'
+                                    });
+                                    return imageUrl;
+                                }
+                                // succeeded 但没有找到图片URL，记录数据以便排查
+                                console.warn('Grsai 返回 succeeded 但未找到图片URL，响应数据:', JSON.stringify(data).substring(0, 500));
+                            }
+                            if (data.status === 'failed') {
+                                const failMsg = data.failure_reason || data.error || data.message || '图片生成失败';
+                                console.error('Grsai 图片生成失败:', failMsg);
+                                recordAICall({
+                                    provider: 'grsai',
+                                    model,
+                                    endpoint: apiEndpoint,
+                                    requestTime: Date.now() - startTime,
+                                    status: 'failed',
+                                    errorMessage: failMsg
+                                });
+                                throw new Error(failMsg);
                             }
                         }
-                        if (data.status === 'failed') {
-                            throw new Error(data.failure_reason || data.error || '图片生成失败');
+                        catch (e) {
+                            // 区分业务错误和JSON解析错误
+                            if (e instanceof SyntaxError) {
+                                // JSON 解析失败，忽略非JSON行
+                            }
+                            else {
+                                // 业务错误（如 status=failed），向上抛出
+                                throw e;
+                            }
                         }
-                    }
-                    catch (e) {
-                        // 忽略非JSON行
                     }
                 }
             }
+            // 流结束但未获取到图片，输出最后收到的数据帮助排查
+            console.error('Grsai 流式响应结束但未获取到图片，最后收到的数据:', lastParsedData ? JSON.stringify(lastParsedData).substring(0, 500) : '无');
+            recordAICall({
+                provider: 'grsai',
+                model,
+                endpoint: apiEndpoint,
+                requestTime: Date.now() - startTime,
+                status: 'failed',
+                errorMessage: '流式响应结束但未获取到图片'
+            });
+            throw new Error('流式响应结束但未获取到图片');
         }
-        throw new Error('流式响应结束但未获取到图片');
+        catch (e) {
+            if (e.name === 'AbortError') {
+                console.error('Grsai 流式图片生成超时（300秒）');
+                recordAICall({
+                    provider: 'grsai',
+                    model,
+                    endpoint: apiEndpoint,
+                    requestTime: Date.now() - startTime,
+                    status: 'timeout',
+                    errorMessage: '图片生成超时（300秒），模型处理时间过长'
+                });
+                throw new Error('图片生成超时（300秒），模型处理时间过长');
+            }
+            throw e;
+        }
+        finally {
+            clearTimeout(streamTimeout);
+            reader.releaseLock();
+        }
     }
     else {
         const drawResponse = await fetch(apiEndpoint, {
@@ -277,31 +440,83 @@ export async function generateImageWithGrsai(params, apiKey, baseUrl = 'https://
         });
         if (!drawResponse.ok) {
             const errorText = await drawResponse.text();
+            recordAICall({
+                provider: 'grsai',
+                model,
+                endpoint: apiEndpoint,
+                requestTime: Date.now() - startTime,
+                status: 'failed',
+                errorMessage: `HTTP ${drawResponse.status}: ${errorText || drawResponse.statusText}`
+            });
             throw new Error(`HTTP ${drawResponse.status}: ${errorText || drawResponse.statusText}`);
         }
         const drawData = await drawResponse.json();
         if (drawData.error) {
+            recordAICall({
+                provider: 'grsai',
+                model,
+                endpoint: apiEndpoint,
+                requestTime: Date.now() - startTime,
+                status: 'failed',
+                errorMessage: `Grsai API 错误: ${drawData.error}`
+            });
             throw new Error(`Grsai API 错误: ${drawData.error}`);
         }
         if (drawData.data && (drawData.data.url || drawData.data.content)) {
             const imageUrl = drawData.data.url || drawData.data.content;
+            recordAICall({
+                provider: 'grsai',
+                model,
+                endpoint: apiEndpoint,
+                requestTime: Date.now() - startTime,
+                status: 'success'
+            });
             return imageUrl;
         }
         if (drawData.data && drawData.data.results && drawData.data.results.length > 0) {
             const imgResult = drawData.data.results[0];
             const imageUrl = imgResult.url || imgResult.content;
             if (imageUrl) {
+                recordAICall({
+                    provider: 'grsai',
+                    model,
+                    endpoint: apiEndpoint,
+                    requestTime: Date.now() - startTime,
+                    status: 'success'
+                });
                 return imageUrl;
             }
         }
         if (drawData.data && typeof drawData.data === 'string' && drawData.data.startsWith('data:')) {
+            recordAICall({
+                provider: 'grsai',
+                model,
+                endpoint: apiEndpoint,
+                requestTime: Date.now() - startTime,
+                status: 'success'
+            });
             return drawData.data;
         }
         if (drawData.url || drawData.content) {
             const imageUrl = drawData.url || drawData.content;
+            recordAICall({
+                provider: 'grsai',
+                model,
+                endpoint: apiEndpoint,
+                requestTime: Date.now() - startTime,
+                status: 'success'
+            });
             return imageUrl;
         }
         if (drawData.code !== 0 || !drawData.data || !drawData.data.id) {
+            recordAICall({
+                provider: 'grsai',
+                model,
+                endpoint: apiEndpoint,
+                requestTime: Date.now() - startTime,
+                status: 'failed',
+                errorMessage: drawData.msg || drawData.message || drawData.error || '绘画请求失败'
+            });
             throw new Error(drawData.msg || drawData.message || drawData.error || '绘画请求失败');
         }
         const taskId = drawData.data.id;
@@ -326,19 +541,57 @@ export async function generateImageWithGrsai(params, apiKey, baseUrl = 'https://
                     const imageUrl = imgResult.url || imgResult.content;
                     if (imageUrl) {
                         console.log('Grsai 图片生成成功');
+                        recordAICall({
+                            provider: 'grsai',
+                            model,
+                            endpoint: apiEndpoint,
+                            requestTime: Date.now() - startTime,
+                            status: 'success',
+                            pollAttempts: attempt + 1,
+                            taskId
+                        });
                         return imageUrl;
                     }
                 }
                 if (result.status === 'failed') {
+                    recordAICall({
+                        provider: 'grsai',
+                        model,
+                        endpoint: apiEndpoint,
+                        requestTime: Date.now() - startTime,
+                        status: 'failed',
+                        errorMessage: result.failure_reason || result.error || '图片生成失败',
+                        pollAttempts: attempt + 1,
+                        taskId
+                    });
                     throw new Error(result.failure_reason || result.error || '图片生成失败');
                 }
             }
             else {
                 if (resultData.code !== 0) {
+                    recordAICall({
+                        provider: 'grsai',
+                        model,
+                        endpoint: apiEndpoint,
+                        requestTime: Date.now() - startTime,
+                        status: 'failed',
+                        errorMessage: resultData.msg || resultData.message || 'apikey error',
+                        pollAttempts: attempt + 1,
+                        taskId
+                    });
                     throw new Error(resultData.msg || resultData.message || 'apikey error');
                 }
             }
         }
+        recordAICall({
+            provider: 'grsai',
+            model,
+            endpoint: apiEndpoint,
+            requestTime: Date.now() - startTime,
+            status: 'timeout',
+            pollAttempts: maxAttempts,
+            taskId
+        });
         throw new Error('图片生成超时');
     }
 }

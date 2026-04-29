@@ -5,6 +5,7 @@
 import type { ApiConfig, OpenAIMessage, SplitScriptResult, ScriptGenerationResult } from '../types/index.js';
 import { callAI, callOpenAICompatible, callIdealab, SCRIPT_PROVIDERS } from './apiClients.js';
 import { getProviderConfig } from '../config/index.js';
+import { recordAICall } from './logContext.js';
 
 // ========== 剧本拆分：提取角色和场景 ==========
 
@@ -116,10 +117,21 @@ ${scriptContent}
 12. 【非常重要】提取角色时，必须遍历剧本全文，统计所有有名字或有台词的角色，确保一个不漏
 13. 【非常重要】提取场景时，必须识别所有不同的地点和环境，确保一个不漏`;
 
+  const callStartTime = Date.now();
+  const endpoint = `${config.baseUrl || ''}/chat/completions`;
+  
   const content = await callAI(config, [
     { role: 'system', content: '你是一个专业的剧本分析助手和AI绘画提示词专家，擅长从剧本文本中提取结构化信息，并能生成符合专业影视制作标准的结构化视觉描述。请始终返回合法的JSON格式。【重要约束】角色的description必须包含"核心约束"、"人物与服饰"、"摄影参数"、"渲染精度"四个部分；场景的description必须包含"核心约束"、"场景与光效"、"摄影参数"、"渲染精度"四个部分。描述要结构完整、细节丰富、画面感强，可直接用于AI图片生成。' },
     { role: 'user', content: prompt }
   ]);
+  
+  recordAICall({
+    provider: config.provider || 'unknown',
+    model: config.model || '',
+    endpoint,
+    requestTime: Date.now() - callStartTime,
+    status: 'success'
+  });
   
   const jsonMatch = content.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('AI返回的内容无法解析为JSON');
@@ -310,11 +322,22 @@ ${scriptContent}
   
   console.log(`[splitScriptWithConfig] 调用 API: provider=${config.provider}, model=${config.model || 'default'}`);
 
+  const callStartTime = Date.now();
+  const endpoint = `${config.baseUrl || ''}/chat/completions`;
+
   if (config.provider === 'idealab') {
     content = await callIdealab(config, messages);
   } else {
     content = await callOpenAICompatible(config, messages);
   }
+  
+  recordAICall({
+    provider: config.provider || 'unknown',
+    model: config.model || '',
+    endpoint,
+    requestTime: Date.now() - callStartTime,
+    status: 'success'
+  });
   
   console.log(`[splitScriptWithConfig] API 返回内容长度: ${content.length}`);
   
@@ -438,10 +461,20 @@ title: 第二集标题
 ${scriptContent}`;
 
   try {
+    const callStartTime = Date.now();
+    const endpoint = `${config.baseUrl || ''}/chat/completions`;
     const aiResponse = await callAI(config, [
       { role: 'system', content: '你是剧本拆分助手。拆分规则：1）每集对应剧本的不同连续段落，绝不重叠；2）第2集内容必须与第1集不同；3）禁止复制同一内容到多集；4）按分隔符格式返回。' },
       { role: 'user', content: prompt }
     ]);
+
+    recordAICall({
+      provider: config.provider || 'unknown',
+      model: config.model || '',
+      endpoint,
+      requestTime: Date.now() - callStartTime,
+      status: 'success'
+    });
 
     const episodes: Array<{ episodeNumber: number; title: string; content: string }> = [];
     const episodeBlocks = aiResponse.split('<<<EPISODE_START>>>').filter(b => b.trim());
@@ -523,14 +556,34 @@ export async function generateScriptWithFallback(
   }
   
   for (const { config, name } of providersToTry) {
+    const callStartTime = Date.now();
+    const endpoint = `${config.baseUrl || ''}/chat/completions`;
     try {
       let content: string;
       if (config.provider === 'idealab') content = await callIdealab(config, messages);
       else content = await callOpenAICompatible(config, messages);
+      
+      recordAICall({
+        provider: config.provider || 'unknown',
+        model: config.model || '',
+        endpoint,
+        requestTime: Date.now() - callStartTime,
+        status: 'success'
+      });
+      
       return { content, provider: config.provider, providerName: name };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       errors.push(`${name}: ${errorMsg}`);
+      
+      recordAICall({
+        provider: config.provider || 'unknown',
+        model: config.model || '',
+        endpoint,
+        requestTime: Date.now() - callStartTime,
+        status: 'failed',
+        errorMessage: errorMsg
+      });
     }
   }
   

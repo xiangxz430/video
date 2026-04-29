@@ -1,5 +1,5 @@
 import { getAllLogs } from '../middleware/requestLogger.js';
-import { RequestLog } from '../middleware/requestLogger.js';
+import { RequestLog } from '../types/index.js';
 import { listApiKeys } from './apiKeyService.js';
 import { estimateCallCost, getModelDisplayInfo } from './modelPricing.js';
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, RequestLog, QueryLogsResult } from '../services/api';
+import { api, RequestLog, QueryLogsResult, AIApiCall } from '../services/api';
 
 const FUNCTIONS = ['script', 'storyboard', 'image', 'video'];
 const PROVIDERS = ['deepseek', 'volcengine', 'grsai', 'openrouter', 'idealab', 'qwen'];
@@ -195,6 +195,81 @@ export function Logs() {
                               </div>
                             )}
                           </div>
+
+                          {/* 请求体面板 */}
+                          {log.requestBody && (
+                            <details className="mt-3">
+                              <summary className="cursor-pointer font-medium text-blue-700 bg-blue-50 rounded px-3 py-1.5 hover:bg-blue-100">
+                                请求体
+                              </summary>
+                              <pre className="mt-2 bg-white border border-blue-200 rounded p-3 text-xs text-gray-800 max-h-64 overflow-auto">
+                                {JSON.stringify(log.requestBody, null, 2)}
+                              </pre>
+                            </details>
+                          )}
+
+                          {/* 响应体面板 */}
+                          {log.responseBody && (
+                            <details className="mt-3">
+                              <summary className="cursor-pointer font-medium text-green-700 bg-green-50 rounded px-3 py-1.5 hover:bg-green-100">
+                                响应体
+                              </summary>
+                              <pre className="mt-2 bg-white border border-green-200 rounded p-3 text-xs text-gray-800 max-h-64 overflow-auto">
+                                {JSON.stringify(log.responseBody, null, 2)}
+                              </pre>
+                            </details>
+                          )}
+
+                          {/* AI API 调用列表面板 */}
+                          {log.aiApiCalls && log.aiApiCalls.length > 0 && (
+                            <details className="mt-3">
+                              <summary className="cursor-pointer font-medium text-purple-700 bg-purple-50 rounded px-3 py-1.5 hover:bg-purple-100">
+                                AI API 调用 ({log.aiApiCalls.length}次)
+                              </summary>
+                              <div className="mt-2 space-y-2">
+                                {log.aiApiCalls.map((call: AIApiCall, idx: number) => (
+                                  <div key={idx} className="bg-white border border-purple-200 rounded p-3 text-xs">
+                                    <div className="flex items-center gap-3 mb-1">
+                                      <span className="font-medium text-gray-800">{call.provider} / {call.model}</span>
+                                      <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                                        call.status === 'success' ? 'bg-green-100 text-green-700' :
+                                        call.status === 'failed' ? 'bg-red-100 text-red-700' :
+                                        'bg-yellow-100 text-yellow-700'
+                                      }`}>
+                                        {call.status}
+                                      </span>
+                                    </div>
+                                    <div className="text-gray-600">
+                                      <span className="font-medium">端点:</span> {call.endpoint}
+                                    </div>
+                                    <div className="text-gray-600">
+                                      <span className="font-medium">耗时:</span> {call.requestTime}ms
+                                    </div>
+                                    {call.tokenUsage && (
+                                      <div className="text-gray-600">
+                                        <span className="font-medium">Token:</span> {call.tokenUsage.total} (输入: {call.tokenUsage.prompt}, 输出: {call.tokenUsage.completion})
+                                      </div>
+                                    )}
+                                    {call.errorMessage && (
+                                      <div className="text-red-600 mt-1">
+                                        <span className="font-medium">错误:</span> {call.errorMessage}
+                                      </div>
+                                    )}
+                                    {call.pollAttempts != null && (
+                                      <div className="text-gray-600">
+                                        <span className="font-medium">轮询次数:</span> {call.pollAttempts}
+                                      </div>
+                                    )}
+                                    {call.taskId && (
+                                      <div className="text-gray-600">
+                                        <span className="font-medium">任务ID:</span> {call.taskId}
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </details>
+                          )}
                         </td>
                       </tr>
                     )}

@@ -222,12 +222,9 @@ const EpisodeEdit: React.FC = () => {
     
     try {
       const imageConfig = await getImageConfigForModel(selectedImageModel, availableImageModels);
-      if (!imageConfig || !imageConfig.apiKey) {
-        alert('请先在设置页面配置图片生成 API');
-        return;
-      }
+      // 服务端代理架构：API Key 由服务端管理
       addLog(`🤖 使用模型: ${availableImageModels.find((m: any) => m.id === selectedImageModel)?.name}`);
-      addLog(`🔧 Provider: ${imageConfig.provider}`);
+      addLog(`🔧 Provider: ${imageConfig?.provider || 'unknown'}`);
       
       // 角色图提示词（使用统一构建函数）
       const characterPrompt = buildCharacterPrompt(character.description);
@@ -293,12 +290,9 @@ const EpisodeEdit: React.FC = () => {
     
     try {
       const imageConfig = await getImageConfigForModel(selectedImageModel, availableImageModels);
-      if (!imageConfig || !imageConfig.apiKey) {
-        alert('请先在设置页面配置图片生成 API');
-        return;
-      }
+      // 服务端代理架构：API Key 由服务端管理
       addLog(`🤖 使用模型: ${availableImageModels.find((m: any) => m.id === selectedImageModel)?.name}`);
-      addLog(`🔧 Provider: ${imageConfig.provider}`);
+      addLog(`🔧 Provider: ${imageConfig?.provider || 'unknown'}`);
       
       // 场景图提示词（使用统一构建函数，四视角转台图）
       const scenePrompt = buildScenePrompt(scene.description);
@@ -514,10 +508,7 @@ const EpisodeEdit: React.FC = () => {
     }
 
     const imageConfig = await getImageConfigForModel(selectedImageModel, availableImageModels);
-    if (!imageConfig || !imageConfig.apiKey) {
-      alert('请先在设置页面配置图片生成 API');
-      return;
-    }
+    // 服务端代理架构：API Key 由服务端管理
 
     // 清除旧日志，显示日志面板
     clearLogs();
@@ -526,7 +517,7 @@ const EpisodeEdit: React.FC = () => {
     addLog('🚀 开始生成首帧图片...');
     addLog(`📷 分镜索引: ${shotIndex + 1}`);
     addLog(`🤖 使用模型: ${availableImageModels.find(m => m.id === selectedImageModel)?.name || selectedImageModel}`);
-    addLog(`🔧 API配置: ${imageConfig.provider}, 模型: ${imageConfig.model}`);
+    addLog(`🔧 API配置: ${imageConfig?.provider || 'unknown'}, 模型: ${imageConfig?.model || selectedImageModel}`);
 
     // 获取剧本名用于图片存储路径
     let scriptName = '未命名剧本';
@@ -773,7 +764,7 @@ const EpisodeEdit: React.FC = () => {
       addLog('');
       addLog('📋 API请求体:');
       addLog('─'.repeat(50));
-      addLog(`  model: ${imageConfig.model || 'doubao-seedream-5-0-260128'}`);
+      addLog(`  model: ${imageConfig?.model || selectedImageModel}`);
       addLog(`  prompt: ${prompt}`);
       addLog(`  size: ${shot.aspectRatio || videoAspectRatio}`);
       if (referenceImages.length > 0) {
@@ -867,10 +858,7 @@ const EpisodeEdit: React.FC = () => {
     }
 
     const imageConfig = await getImageConfigForModel(selectedImageModel, availableImageModels);
-    if (!imageConfig || !imageConfig.apiKey) {
-      alert('请先在设置页面配置图片生成 API');
-      return;
-    }
+    // 服务端代理架构：API Key 由服务端管理
 
     // 清除旧日志，显示日志面板
     clearLogs();
@@ -879,7 +867,7 @@ const EpisodeEdit: React.FC = () => {
     addLog('🚀 开始生成尾帧图片...');
     addLog(`📷 分镜索引: ${shotIndex + 1}`);
     addLog(`🤖 使用模型: ${availableImageModels.find(m => m.id === selectedImageModel)?.name || selectedImageModel}`);
-    addLog(`🔧 API配置: ${imageConfig.provider}, 模型: ${imageConfig.model}`);
+    addLog(`🔧 API配置: ${imageConfig?.provider || 'unknown'}, 模型: ${imageConfig?.model || selectedImageModel}`);
 
     // 获取剧本名用于图片存储路径
     let scriptName = '未命名剧本';
@@ -1152,7 +1140,7 @@ const EpisodeEdit: React.FC = () => {
       addLog('');
       addLog('📋 API请求体:');
       addLog('─'.repeat(50));
-      addLog(`  model: ${imageConfig.model || 'doubao-seedream-5-0-260128'}`);
+      addLog(`  model: ${imageConfig?.model || selectedImageModel}`);
       addLog(`  prompt: ${prompt}`);
       addLog(`  size: ${shot.aspectRatio || videoAspectRatio}`);
       addLog(`  image: [${referenceImages.length}张图片]`);
@@ -2446,11 +2434,11 @@ const EpisodeEdit: React.FC = () => {
 
     // 使用统一配置获取（自动多级回退）
     let apiConfig: any = null;
-    if (!apiConfig?.apiKey) {
+    if (!apiConfig?.model) {
       apiConfig = getBestConfig(apiConfigs, 'scriptGeneration');
     }
-    if (!apiConfig || !apiConfig.apiKey) {
-      alert('请先在设置页面配置 API Key');
+    if (!apiConfig) {
+      alert('未找到可用的剧本生成配置，请在服务端管理后台检查 Provider 配置');
       return;
     }
     

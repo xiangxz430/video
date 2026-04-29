@@ -4,6 +4,7 @@
  */
 import type { ApiConfig, Shot, StoryboardProgressCallback } from '../types/index.js';
 import { callAI, callOpenAIStreaming } from './apiClients.js';
+import { recordAICall } from './logContext.js';
 
 // 计算两段文本的相似度（0-1，基于共同子串）
 function textSimilarity(a: string, b: string): number {
@@ -96,6 +97,7 @@ export async function generateStoryboardScript(
       
       onContentStream?.(`  重新生成镜头${targetShot.shotNumber}...\n`);
       
+      const regenStartTime = Date.now();
       try {
         const regenPrompt = `这个镜头的描述与镜头${refShot.shotNumber}高度重复，请完全重新设计。
 
@@ -116,6 +118,14 @@ ${targetShot.narrationSource || targetShot.description}
           { role: 'user', content: regenPrompt }
         ]);
         
+        recordAICall({
+          provider: config.provider || 'unknown',
+          model: config.model || '',
+          endpoint: `${config.baseUrl || ''}/chat/completions`,
+          requestTime: Date.now() - regenStartTime,
+          status: 'success'
+        });
+        
         const jsonMatch = response.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           const newData = JSON.parse(jsonMatch[0]);
@@ -126,6 +136,14 @@ ${targetShot.narrationSource || targetShot.description}
         }
       } catch (err) {
         onContentStream?.(`  ⚠️ 镜头${targetShot.shotNumber}重新生成失败，保留原内容\n`);
+        recordAICall({
+          provider: config.provider || 'unknown',
+          model: config.model || '',
+          endpoint: `${config.baseUrl || ''}/chat/completions`,
+          requestTime: Date.now() - regenStartTime,
+          status: 'failed',
+          errorMessage: err instanceof Error ? err.message : '重新生成失败'
+        });
       }
     }
   } else {
@@ -188,6 +206,9 @@ ${episodeContent}
   
   onContentStream?.(`\n[使用模型: ${config.model} (${config.provider})]\n`);
   
+  const callStartTime = Date.now();
+  const endpoint = `${config.baseUrl || ''}/chat/completions`;
+  
   if (onContentStream && (config.provider === 'deepseek' || config.provider === 'openai')) {
     content = await callOpenAIStreaming(config, [
       { role: 'system', content: '你是分镜助手。请划分镜头结构，返回简短JSON。每个镜头的描述限制在一句话以内。' },
@@ -199,6 +220,14 @@ ${episodeContent}
       { role: 'user', content: prompt }
     ]);
   }
+  
+  recordAICall({
+    provider: config.provider || 'unknown',
+    model: config.model || '',
+    endpoint,
+    requestTime: Date.now() - callStartTime,
+    status: 'success'
+  });
 
   const shots = parseStoryboardJSON(content);
   return shots.map((shot: any, idx: number) => ({
@@ -326,8 +355,10 @@ ${JSON.stringify(shot, null, 2)}
         onProgress?.(`🔄 第 ${i + 1}/${shots.length} 个镜头第 ${retry} 次重试...`, 2, 2);
       }
       
+      const shotStartTime = Date.now();
       try {
         let aiResponse: string;
+        const endpoint = `${config.baseUrl || ''}/chat/completions`;
         
         if (onContentStream && (config.provider === 'deepseek' || config.provider === 'openai')) {
           onContentStream?.(`\n[镜头 ${i + 1}/${shots.length} 使用模型: ${config.model} (${config.provider})]\n`);
@@ -341,6 +372,14 @@ ${JSON.stringify(shot, null, 2)}
             { role: 'user', content: prompt }
           ]);
         }
+        
+        recordAICall({
+          provider: config.provider || 'unknown',
+          model: config.model || '',
+          endpoint,
+          requestTime: Date.now() - shotStartTime,
+          status: 'success'
+        });
         
         const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
@@ -377,6 +416,14 @@ ${JSON.stringify(shot, null, 2)}
         }
       } catch (error: any) {
         console.error(`    ❌ 第 ${retry + 1} 次尝试失败: ${error?.message || error}`);
+        recordAICall({
+          provider: config.provider || 'unknown',
+          model: config.model || '',
+          endpoint: `${config.baseUrl || ''}/chat/completions`,
+          requestTime: Date.now() - shotStartTime,
+          status: 'failed',
+          errorMessage: error?.message || '未知错误'
+        });
         if (retry === maxRetries - 1) {
           onProgress?.(`❌ 第 ${i + 1}/${shots.length} 个镜头生成失败: ${error?.message || '未知错误'}，使用原始数据`, 2, 2);
           enriched.push(shot);

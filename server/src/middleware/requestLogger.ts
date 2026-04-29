@@ -2,25 +2,12 @@ import { Request, Response, NextFunction } from 'express';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { RequestLog, AIApiCall } from '../types/index.js';
+import { logStorage, LogContext } from '../services/logContext.js';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const LOGS_FILE = path.join(DATA_DIR, 'request-logs.json');
 const MAX_LOGS = 1000;
-
-export interface RequestLog {
-  id: string;
-  timestamp: string;
-  method: string;
-  endpoint: string;        // 如 /api/image/generate
-  function: string;        // 功能分类: script/storyboard/image/video
-  provider: string;        // 从请求体 body.provider 提取
-  model: string;           // 从请求体 body.model 提取
-  apiKeyMasked: string;    // 脱敏的 API Key
-  statusCode: number;
-  duration: number;        // 耗时(ms)
-  error: string | null;    // 错误信息
-  requestSummary: string;  // 请求摘要（如 prompt 的前100字）
-}
 
 interface LogsData {
   logs: RequestLog[];
@@ -113,6 +100,43 @@ function extractRequestSummary(body: any): string {
   return summary;
 }
 
+// 需要截断的超长字段名（base64/长文本）
+const TRUNCATABLE_FIELDS = new Set([
+  'script',
+  'referenceImage',
+  'episodeContent',
+  'firstFrameImage',
+  'lastFrameImage',
+  'firstFrameRefImage',
+  'lastFrameRefImage',
+  'image',
+  'imageUrl',
+  'videoUrl',
+]);
+
+const TRUNCATE_LIMIT = 200;
+
+// 深拷贝并截断超长字段，避免修改原始数据
+function sanitizeBody(body: any): Record<string, any> {
+  if (!body || typeof body !== 'object') return {};
+
+  const result: Record<string, any> = {};
+  for (const key of Object.keys(body)) {
+    const value = body[key];
+    if (typeof value === 'string' && TRUNCATABLE_FIELDS.has(key) && value.length > TRUNCATE_LIMIT) {
+      result[key] = value.slice(0, TRUNCATE_LIMIT) + '...[truncated]';
+    } else if (Array.isArray(value)) {
+      // 数组只保留长度信息，不展开
+      result[key] = `[Array:${value.length}]`;
+    } else if (typeof value === 'object' && value !== null) {
+      result[key] = sanitizeBody(value);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
 // 从 Authorization 头提取 API Key
 function extractApiKey(req: Request): string {
   const authHeader = req.headers.authorization;
@@ -139,6 +163,22 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
     return next();
   }
   
+  // 记录完整请求体（深拷贝并截断超长字段）
+  const requestBody = sanitizeBody(req.body);
+  
+  // 拦截 res.json() 捕获响应体
+  const originalJson = res.json.bind(res);
+  res.json = function(data: any) {
+    (res as any)._responseBody = data;
+    return originalJson(data);
+  };
+  
+  // 用 AsyncLocalStorage 包裹 next()，使下游可记录 AI 调用
+  const logCtx: LogContext = { aiApiCalls: [] };
+  logStorage.run(logCtx, () => {
+    next();
+  });
+  
   // 监听响应完成事件
   res.on('finish', () => {
     const duration = Date.now() - startTime;
@@ -152,9 +192,14 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
       // 提取错误信息
       let error: string | null = null;
       if (res.statusCode >= 400) {
-        // 尝试从响应中获取错误信息（通过 res.locals）
         error = (res.locals as any).errorMessage || `HTTP ${res.statusCode}`;
       }
+      
+      // 截断响应体超长字段
+      const responseBody = sanitizeBody((res as any)._responseBody);
+      
+      // 收集本次请求中记录的 AI API 调用
+      const aiApiCalls: AIApiCall[] | undefined = logCtx.aiApiCalls.length > 0 ? logCtx.aiApiCalls : undefined;
       
       const logEntry: RequestLog = {
         id: crypto.randomUUID(),
@@ -169,6 +214,9 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
         duration,
         error,
         requestSummary: extractRequestSummary(body),
+        requestBody,
+        responseBody,
+        ...(aiApiCalls ? { aiApiCalls } : {}),
       };
       
       // 读取现有日志
@@ -189,8 +237,6 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
       console.error('[RequestLogger] 记录日志失败:', error);
     }
   });
-  
-  next();
 }
 
 // 导出供其他服务使用的日志操作方法

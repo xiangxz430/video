@@ -100,10 +100,9 @@ const Episodes: React.FC = () => {
         finalConfig = getBestConfig(apiConfigs, 'scriptGeneration');
       }
       
-      if (!finalConfig || !finalConfig.apiKey) {
+      if (!finalConfig) {
         const configCount = apiConfigs.length;
-        const configsWithKey = apiConfigs.filter((c: any) => c.apiKey).length;
-        setGenerateError(`未找到可用的 API 配置（共${configCount}个配置，${configsWithKey}个有API Key）。请先在设置页面配置 API Key`);
+        setGenerateError(`未找到可用的 API 配置（共${configCount}个配置）。请在服务端管理后台检查 Provider 配置`);
         setGeneratingEpisodeId(null);
         return;
       }
@@ -346,8 +345,8 @@ const Episodes: React.FC = () => {
         finalConfig = getBestConfig(apiConfigs, 'scriptGeneration');
       }
       
-      if (!finalConfig || !finalConfig.apiKey) {
-        setGenerateError('未找到可用的 API 配置。请先在设置页面配置 API Key');
+      if (!finalConfig) {
+        setGenerateError('未找到可用的 API 配置。请在服务端管理后台检查 Provider 配置');
         setGeneratingEpisodeId(null);
         setAddingEpisode(false);
         return;

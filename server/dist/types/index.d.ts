@@ -126,3 +126,35 @@ export interface ScriptGenerationResult {
     providerName: string;
 }
 export type StoryboardProgressCallback = (message: string, step?: number, totalSteps?: number) => void;
+export interface AIApiCall {
+    provider: string;
+    model: string;
+    endpoint: string;
+    requestTime: number;
+    tokenUsage?: {
+        prompt: number;
+        completion: number;
+        total: number;
+    };
+    status: 'success' | 'failed' | 'timeout';
+    errorMessage?: string;
+    pollAttempts?: number;
+    taskId?: string;
+}
+export interface RequestLog {
+    id: string;
+    timestamp: string;
+    method: string;
+    endpoint: string;
+    function: string;
+    provider: string;
+    model: string;
+    apiKeyMasked: string;
+    statusCode: number;
+    duration: number;
+    error: string | null;
+    requestSummary: string;
+    requestBody?: Record<string, any>;
+    responseBody?: Record<string, any>;
+    aiApiCalls?: AIApiCall[];
+}

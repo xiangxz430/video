@@ -14,12 +14,13 @@ err() { echo -e "${RED}[$(date +%H:%M:%S)] ❌${NC} $1"; }
 #  配置（按需修改）
 # ========================================
 MONGO_ROOT_PWD="VgMongo2026!Aa"
-MONGO_CACHE_GB=0.3          # 2GB 机器限制 300MB，4GB+ 可调大
-PROJECT_DIR="/opt/server"
+MONGO_CACHE_GB=0.3                    # 2GB 机器限制 300MB
+REPO_DIR="/opt/video"                 # 仓库根目录（含客户端）
+SERVER_DIR="/opt/video/server"        # 服务端子目录
 GIT_REPO="https://github.com/xiangxz430/video.git"
 MONGODB_URI="mongodb://root:${MONGO_ROOT_PWD}@127.0.0.1:27017/video_generator?authSource=admin"
 
-log "配置: 缓存=${MONGO_CACHE_GB}GB | 项目目录=${PROJECT_DIR}"
+log "配置: 缓存=${MONGO_CACHE_GB}GB | 服务端=${SERVER_DIR}"
 
 # ========================================
 #  Step 1: 安装 MongoDB 4.4
@@ -31,7 +32,7 @@ else
   cat > /etc/yum.repos.d/mongodb-org-4.4.repo << 'REPO'
 [mongodb-org-4.4]
 name=MongoDB Repository
-baseurl=https://repo.mongodb.org/yum/redhat/$releasever/mongodb-org/4.4/x86_64/
+baseurl=https://repo.mongodb.org/yum/redhat/7/mongodb-org/4.4/x86_64/
 gpgcheck=1
 enabled=1
 gpgkey=https://www.mongodb.org/static/pgp/server-4.4.asc
@@ -55,7 +56,6 @@ log "启动无认证模式创建管理员..."
 mongod --dbpath /var/lib/mongo --fork --logpath /var/log/mongodb/mongod.log --bind_ip 127.0.0.1 2>/dev/null
 sleep 2
 
-# 用 mongo shell 创建管理员（MongoDB 4.4 自带，不是 mongosh）
 mongo --quiet --eval "
   try {
     var adminDB = db.getSiblingDB('admin');
@@ -88,9 +88,8 @@ security:
   authorization: enabled
 CONF
 
-# 用配置启动
 mongod --config /etc/mongod.conf --fork
-log "MongoDB 已启动（认证模式，缓存限制 ${MONGO_CACHE_GB}GB）"
+log "MongoDB 已启动（认证模式，缓存 ${MONGO_CACHE_GB}GB）"
 
 # 测试连接
 if mongo -u root -p "${MONGO_ROOT_PWD}" --authenticationDatabase admin --quiet --eval 'print(db.runCommand({ping:1}).ok)' 2>/dev/null | grep -q '1'; then
@@ -115,19 +114,21 @@ if ! command -v node &>/dev/null; then
 fi
 log "Node.js: $(node -v)"
 
-# 拉代码
-if [ -d "${PROJECT_DIR}/.git" ]; then
+# 拉取仓库代码
+if [ -d "${REPO_DIR}/.git" ]; then
   log "更新已有代码..."
-  cd "${PROJECT_DIR}" && git pull origin main
+  cd "${REPO_DIR}" && git pull origin main
 else
   log "克隆代码..."
-  rm -rf "${PROJECT_DIR}"
-  git clone "${GIT_REPO}" "${PROJECT_DIR}"
+  rm -rf "${REPO_DIR}"
+  git clone "${GIT_REPO}" "${REPO_DIR}"
 fi
 
-cd "${PROJECT_DIR}"
+# 进入服务端子目录
+cd "${SERVER_DIR}"
 
 # 更新 .env 中的 MongoDB 连接串
+touch .env
 if grep -q '^MONGODB_URI=' .env 2>/dev/null; then
   sed -i "s|^MONGODB_URI=.*|MONGODB_URI=${MONGODB_URI}|" .env
 else
@@ -135,26 +136,27 @@ else
 fi
 log ".env 已更新 MONGODB_URI"
 
-# 清理旧依赖（避免 ENOTEMPTY）
+# 清理旧依赖
 rm -rf node_modules package-lock.json
 
-# 安装依赖
-log "安装 npm 依赖（约 30-60 秒）..."
+# 安装服务端依赖
+log "安装服务端 npm 依赖（约 30-60 秒）..."
 npm install
 
-# 编译
-log "编译 TypeScript + 管理后台（约 20-40 秒）..."
+# 编译 TypeScript + 管理后台
+log "编译 + 管理后台（约 20-40 秒）..."
 npm run build
 
-# 重启 PM2
-if command -v pm2 &>/dev/null; then
-  log "重启 PM2..."
-  pm2 restart video-server || pm2 start ecosystem.config.cjs
-  pm2 save
-else
-  err "PM2 未安装，请先执行: npm i -g pm2"
-  exit 1
+# PM2 管理
+if ! command -v pm2 &>/dev/null; then
+  log "安装 PM2..."
+  npm install -g pm2
 fi
+
+log "启动/重启 PM2..."
+pm2 restart video-server || pm2 start ecosystem.config.cjs
+pm2 save
+log "PM2 已就绪"
 
 # ========================================
 #  Step 4: 验证

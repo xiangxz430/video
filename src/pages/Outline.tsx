@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
-import { splitScript, generateScript } from '../services/serverApiClient';
+import { splitScript, splitScriptStream, generateScript } from '../services/serverApiClient';
 import { getEnabledModels, getModelDisplayText } from '../utils/modelConfig';
 import { exportToJson, importFromJson, getScript } from '../services/database';
 import { open, save } from '@tauri-apps/plugin-dialog';
@@ -34,6 +34,12 @@ const Outline: React.FC = () => {
   // 剧本拆分模型选择
   const [selectedScriptModel, setSelectedScriptModel] = useState('');
 
+  // 拆分日志和流式内容
+  const [splitLogs, setSplitLogs] = useState<string[]>([]);
+  const [splitStreamContent, setSplitStreamContent] = useState('');
+  const [showRawOutput, setShowRawOutput] = useState(false);
+  const logPanelRef = useRef<HTMLDivElement>(null);
+
   // 获取可用的剧本拆分模型列表
   const enabledScriptModels = useMemo(() => {
     if (apiConfigs && apiConfigs.length > 0) {
@@ -64,6 +70,13 @@ const Outline: React.FC = () => {
       // 初始化完成
     }
   }, [isInitialized]);
+
+  // 自动滚动日志面板
+  useEffect(() => {
+    if (logPanelRef.current) {
+      logPanelRef.current.scrollTop = logPanelRef.current.scrollHeight;
+    }
+  }, [splitLogs]);
 
   // 自动保存
   useEffect(() => {
@@ -185,16 +198,22 @@ const Outline: React.FC = () => {
     }
   };
 
+  // 格式化时间戳 HH:MM:SS
+  const formatTime = () => {
+    const now = new Date();
+    return now.toTimeString().slice(0, 8);
+  };
+
   const handleSplit = async () => {
     if (!script || !currentScript?.id) return;
-    
+
     // 检查是否有已生成的图片
     const scriptId = currentScript.id;
     const existingCharacters = characters.filter(c => c.scriptId === scriptId);
     const existingScenes = scenes.filter(s => s.scriptId === scriptId);
     const charactersWithImages = existingCharacters.filter(c => c.imageUrl);
     const scenesWithImages = existingScenes.filter(s => s.imageUrl);
-    
+
     // 如果有图片，弹出确认对话框
     if (charactersWithImages.length > 0 || scenesWithImages.length > 0) {
       const imageCount = charactersWithImages.length + scenesWithImages.length;
@@ -205,10 +224,25 @@ const Outline: React.FC = () => {
         return; // 用户取消
       }
     }
-    
+
     setSplitError('');
     setIsSplitting(true);
-    
+    setSplitLogs([]);
+    setSplitStreamContent('');
+
+    // 优先使用选中的模型，若找不到则自动回退到第一个可用模型
+    let modelInfo = enabledScriptModels.find(m => m.id === selectedScriptModel);
+    if (!modelInfo && enabledScriptModels.length > 0) {
+      modelInfo = enabledScriptModels[0];
+      setSelectedScriptModel(modelInfo.id);
+    }
+
+    const provider = modelInfo?.provider || '默认';
+    const model = modelInfo?.id || '默认';
+
+    // 记录开始日志
+    setSplitLogs(prev => [...prev, `[${formatTime()}] 开始拆分，使用模型: ${provider}/${model}`]);
+
     try {
       // 构建自定义角色和场景信息
       let customInfo = '';
@@ -224,20 +258,32 @@ const Outline: React.FC = () => {
           customInfo += `- ${scene.name}: ${scene.description}\n`;
         });
       }
-      
-      // 调用服务端进行剧本拆分
-      // 优先使用选中的模型，若找不到则自动回退到第一个可用模型，确保 provider 不为 undefined
-      let modelInfo = enabledScriptModels.find(m => m.id === selectedScriptModel);
-      if (!modelInfo && enabledScriptModels.length > 0) {
-        modelInfo = enabledScriptModels[0];
-        setSelectedScriptModel(modelInfo.id);
-      }
-      const result = await splitScript({
+
+      // 调用服务端 SSE 流式拆分
+      let contentLength = 0;
+      const result = await splitScriptStream({
         script: script + customInfo,
         provider: modelInfo?.provider,
         model: modelInfo?.id || undefined,
+      }, {
+        onProgress: (data) => {
+          const progressMsg = `[${data.phase || '处理中'}] ${data.message || ''}${data.total ? ` (${data.current}/${data.total})` : ''}`;
+          setSplitLogs(prev => [...prev, `[${formatTime()}] ${progressMsg}`]);
+        },
+        onContent: (chunk) => {
+          setSplitStreamContent(prev => prev + chunk);
+          contentLength += chunk.length;
+          // 每隔约 500 字符记录一次内容接收日志
+          if (contentLength >= 500) {
+            setSplitLogs(prev => [...prev, `[${formatTime()}] 已接收 ${contentLength}+ 字符内容...`]);
+            contentLength = 0;
+          }
+        }
       });
-      
+
+      // 记录完成日志
+      setSplitLogs(prev => [...prev, `[${formatTime()}] 拆分完成！提取到 ${result.characters.length} 个角色、${result.scenes.length} 个场景、${result.episodes.length} 个分集`]);
+
       // 先删除该剧本下所有现有的角色、场景和分集，避免重复
       for (const char of characters) {
         if (char.scriptId === scriptId) {
@@ -254,7 +300,7 @@ const Outline: React.FC = () => {
           await deleteEpisode(episode.id!);
         }
       }
-      
+
       // 保存角色
       for (const char of result.characters) {
         await createCharacter({
@@ -265,7 +311,7 @@ const Outline: React.FC = () => {
           scriptId
         });
       }
-      
+
       // 保存场景
       for (const scene of result.scenes) {
         await createScene({
@@ -275,7 +321,7 @@ const Outline: React.FC = () => {
           scriptId
         });
       }
-      
+
       // 保存分集（每个剧本独立编号，从1开始）
       for (let i = 0; i < result.episodes.length; i++) {
         const episode = result.episodes[i];
@@ -287,10 +333,11 @@ const Outline: React.FC = () => {
           scriptId
         });
       }
-      
+
       navigate('/characters-scenes');
     } catch (error: any) {
       const errorMsg = error?.message || error?.toString() || '未知错误';
+      setSplitLogs(prev => [...prev, `[${formatTime()}] 拆分失败: ${errorMsg}`]);
       setSplitError(`AI 拆分失败: ${errorMsg}`);
     } finally {
       setIsSplitting(false);
@@ -687,6 +734,81 @@ const Outline: React.FC = () => {
             </button>
           </div>
         </div>
+
+        {/* 实时拆分日志面板 */}
+        {(isSplitting || splitLogs.length > 0) && (
+          <div className="mt-4">
+            <div className="bg-gray-900 rounded-lg overflow-hidden">
+              {/* 头部标题栏 */}
+              <div className="flex items-center justify-between px-4 py-2 bg-gray-800 border-b border-gray-700">
+                <div className="flex items-center space-x-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm3.293 1.293a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 01-1.414-1.414L7.586 10 5.293 7.707a1 1 0 010-1.414zM11 12a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
+                  </svg>
+                  <span className="text-sm font-medium text-gray-300">拆分日志</span>
+                  {isSplitting && (
+                    <span className="flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-green-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={() => { setSplitLogs([]); setSplitStreamContent(''); }}
+                  className="text-xs text-gray-400 hover:text-gray-200 transition"
+                >
+                  清空
+                </button>
+              </div>
+              {/* 日志内容 */}
+              <div
+                ref={logPanelRef}
+                className="h-[300px] overflow-y-auto px-4 py-3 font-mono text-sm space-y-1"
+              >
+                {splitLogs.length === 0 ? (
+                  <div className="text-gray-500">等待开始...</div>
+                ) : (
+                  splitLogs.map((log, index) => (
+                    <div key={index} className="text-green-400">
+                      {log}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* AI 原始输出折叠区域 */}
+            {splitStreamContent && (
+              <div className="mt-2">
+                <button
+                  onClick={() => setShowRawOutput(!showRawOutput)}
+                  className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-800 transition"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className={`h-4 w-4 transition-transform ${showRawOutput ? 'rotate-90' : ''}`}
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                  </svg>
+                  <span>AI 原始输出</span>
+                  <span className="text-xs text-gray-400">({splitStreamContent.length} 字符)</span>
+                </button>
+                {showRawOutput && (
+                  <div className="mt-2 bg-gray-900 rounded-lg overflow-hidden">
+                    <div className="px-4 py-2 bg-gray-800 border-b border-gray-700">
+                      <span className="text-xs text-gray-400">服务端返回的原始内容</span>
+                    </div>
+                    <div className="px-4 py-3 font-mono text-sm text-white whitespace-pre-wrap max-h-[400px] overflow-y-auto">
+                      {splitStreamContent}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="mt-6 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg p-6 border border-purple-100">

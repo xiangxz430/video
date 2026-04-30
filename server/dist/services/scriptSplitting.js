@@ -1,4 +1,4 @@
-import { callAI, callOpenAICompatible, callIdealab, SCRIPT_PROVIDERS } from './apiClients.js';
+import { callAI, callOpenAICompatible, callIdealab, callOpenAIStreaming, SCRIPT_PROVIDERS } from './apiClients.js';
 import { getProviderConfig } from '../config/index.js';
 import { recordAICall, sanitizeAICallBody } from './logContext.js';
 // ========== JSON 修复工具函数 ==========
@@ -200,7 +200,7 @@ ${scriptContent}
     }
 }
 // ========== 使用指定配置拆分剧本 ==========
-export async function splitScriptWithConfig(scriptContent, config, customInfo = '') {
+export async function splitScriptWithConfig(scriptContent, config, customInfo = '', onProgress, onContentChunk) {
     const systemPrompt = `你是一个专业的剧本分析助手和AI绘画提示词专家。请将以下剧本内容拆分为角色、场景和分集信息。
 ${customInfo}
 
@@ -340,11 +340,18 @@ ${scriptContent}
     console.log(`[splitScriptWithConfig] 调用 API: provider=${config.provider}, model=${config.model || 'default'}`);
     const callStartTime = Date.now();
     const endpoint = `${config.baseUrl || ''}/chat/completions`;
-    if (config.provider === 'idealab') {
-        content = await callIdealab(config, messages);
+    if (onProgress) {
+        onProgress('splitting', 1, 1, '正在分析剧本，提取角色和场景...');
+    }
+    const supportsStreaming = ['deepseek', 'openai', 'anthropic', 'volcengine', 'tokenplan', 'custom', 'idealab'].includes(config.provider || '');
+    if (supportsStreaming) {
+        content = await callOpenAIStreaming(config, messages, (chunk) => {
+            if (onContentChunk)
+                onContentChunk(chunk);
+        });
     }
     else {
-        content = await callOpenAICompatible(config, messages);
+        content = await callAI(config, messages);
     }
     recordAICall({
         provider: config.provider || 'unknown',
@@ -458,7 +465,7 @@ function extractArraysFromJson(rawJson) {
     return null;
 }
 // ========== 按集号从原剧本中提取对应集的内容 ==========
-export async function extractEpisodesFromScript(scriptContent, episodeCount, config) {
+export async function extractEpisodesFromScript(scriptContent, episodeCount, config, onProgress, onContentChunk) {
     console.log(`[extractEpisodesFromScript] 调用 AI 拆分剧本为 ${episodeCount} 集...`);
     const prompt = `请将以下剧本按内容逻辑拆分为 ${episodeCount} 集。
 
@@ -495,10 +502,24 @@ ${scriptContent}`;
     try {
         const callStartTime = Date.now();
         const endpoint = `${config.baseUrl || ''}/chat/completions`;
-        const aiResponse = await callAI(config, [
+        if (onProgress) {
+            onProgress('extracting', 1, 1, '正在拆分剧集...');
+        }
+        const messages = [
             { role: 'system', content: '你是剧本拆分助手。拆分规则：1）每集对应剧本的不同连续段落，绝不重叠；2）第2集内容必须与第1集不同；3）禁止复制同一内容到多集；4）按分隔符格式返回。' },
             { role: 'user', content: prompt }
-        ]);
+        ];
+        let aiResponse;
+        const supportsStreaming = ['deepseek', 'openai', 'anthropic', 'volcengine', 'tokenplan', 'custom', 'idealab'].includes(config.provider || '');
+        if (supportsStreaming) {
+            aiResponse = await callOpenAIStreaming(config, messages, (chunk) => {
+                if (onContentChunk)
+                    onContentChunk(chunk);
+            });
+        }
+        else {
+            aiResponse = await callAI(config, messages);
+        }
         recordAICall({
             provider: config.provider || 'unknown',
             model: config.model || '',

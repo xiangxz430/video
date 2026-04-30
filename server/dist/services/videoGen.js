@@ -81,8 +81,11 @@ export async function submitVolcVideoTask(params, config) {
             content.push({ type: 'image_url', image_url: { url: imgUrl }, role: 'reference_image' });
         });
     }
+    // 修正模型名：客户端可能传 doubao-seedance-2-0-fast（短横线），实际API需要 doubao-seedance-2.0-fast（点号）
+    const rawModel = config.model || 'doubao-seedance-1-5-pro-251215';
+    const model = rawModel.replace(/seedance-(\d+)-(\d+)-fast/, 'seedance-$1.$2-fast');
     const requestBody = {
-        model: config.model || 'doubao-seedance-1-5-pro-251215',
+        model,
         content
     };
     if (aspectRatio)
@@ -141,7 +144,8 @@ export async function waitForVolcVideo(taskId, config, maxRetries = VIDEO_MAX_PO
 }
 export async function generateVideoWithVolcEngine(params, config) {
     const startTime = Date.now();
-    const model = config.model || 'doubao-seedance-1-5-pro-251215';
+    const rawModel = config.model || 'doubao-seedance-1-5-pro-251215';
+    const model = rawModel.replace(/seedance-(\d+)-(\d+)-fast/, 'seedance-$1.$2-fast');
     const baseUrl = config.baseUrl || DEFAULT_VOLC_ARK_BASE_URL;
     let pollAttempts = 0;
     try {
@@ -462,7 +466,7 @@ export async function generateVideo(params, config, onProgress) {
         case 'grsai':
             return generateVideoWithGRSai(params, config, onProgress);
         case 'openrouter':
-            if (model.includes('wan-2.6')) {
+            if (model.includes('wan-2.6') || model.includes('wan-2.7')) {
                 return generateVideoWithWan26(params, config, onProgress);
             }
             return generateVideoWithOpenRouter(params, config, onProgress);

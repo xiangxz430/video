@@ -171,6 +171,14 @@ function getModelDisplayName(provider: string, modelId: string): string {
     'google/veo-3.1': 'Veo 3.1 (alpha)',
     'bytedance/seedance-1.5-pro': 'Seedance 1.5 Pro (alpha)',
     'minimax/video-01': 'MiniMax Video 01',
+    'kwaivgi/kling-v3.0-pro': 'Kling v3.0 Pro',
+    'kwaivgi/kling-v3.0-standard': 'Kling v3.0 Standard',
+    'kwaivgi/kling-video-o1': 'Kling Video O1',
+    'minimax/hailuo-2.3': 'Hailuo 2.3',
+    'bytedance/seedance-2.0': 'Seedance 2.0',
+    'bytedance/seedance-2.0-fast': 'Seedance 2.0 Fast',
+    'alibaba/wan-2.7': 'Wan 2.7',
+    'alibaba/wan-2.6': 'Wan 2.6',
     // Token Plan (百炼包月)
     'qwen3.6-plus': 'Qwen3.6-Plus',
     'glm-5': 'GLM-5',
@@ -285,6 +293,14 @@ export function getModelDescription(provider: string, modelId: string): string {
       'google/veo-3.1': 'OR-Veo3.1视频',
       'bytedance/seedance-1.5-pro': 'OR-字节视频',
       'minimax/video-01': 'OR-MiniMax视频',
+      'kwaivgi/kling-v3.0-pro': 'OR-快手Kling3.0',
+      'kwaivgi/kling-v3.0-standard': 'OR-快手Kling3.0标准',
+      'kwaivgi/kling-video-o1': 'OR-快手O1',
+      'minimax/hailuo-2.3': 'OR-海螺2.3',
+      'bytedance/seedance-2.0': 'OR-字节2.0',
+      'bytedance/seedance-2.0-fast': 'OR-字节2.0快速',
+      'alibaba/wan-2.7': 'OR-阿里2.7',
+      'alibaba/wan-2.6': 'OR-阿里2.6',
     };
     return orDesc[modelId] || 'OpenRouter';
   }
@@ -373,6 +389,14 @@ export function getModelPrice(provider: string, modelId: string): string | undef
       'google/veo-3.1': '$0.12/秒',
       'bytedance/seedance-1.5-pro': '$0.08/秒',
       'minimax/video-01': '$0.10/秒',
+      'kwaivgi/kling-v3.0-pro': '$0.17/秒',
+      'kwaivgi/kling-v3.0-standard': '$0.08/秒',
+      'kwaivgi/kling-video-o1': '$0.11/秒',
+      'minimax/hailuo-2.3': '$0.10/秒',
+      'bytedance/seedance-2.0': '$0.10/秒',
+      'bytedance/seedance-2.0-fast': '$0.06/秒',
+      'alibaba/wan-2.7': '$0.10/秒',
+      'alibaba/wan-2.6': '$0.07/秒',
     };
     return orPrice[modelId];
   }

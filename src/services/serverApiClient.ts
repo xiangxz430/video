@@ -31,10 +31,17 @@ async function getServerConfig(): Promise<ServerConfig> {
   const serverUrlConfig = await getApiConfig('server_url');
   const serverApiKeyConfig = await getApiConfig('server_api_key');
   
-  return {
-    serverUrl: serverUrlConfig?.apiKey || 'http://localhost:3000',
-    apiKey: serverApiKeyConfig?.apiKey || ''
-  };
+  const serverUrl = serverUrlConfig?.apiKey || '';
+  const apiKey = serverApiKeyConfig?.apiKey || '';
+  
+  console.log('[getServerConfig] serverUrlConfig:', JSON.stringify(serverUrlConfig));
+  console.log('[getServerConfig] 最终使用 serverUrl:', serverUrl || '(未配置)');
+  
+  if (!serverUrl) {
+    throw new Error('服务端地址未配置，请先在设置页面配置服务端地址');
+  }
+  
+  return { serverUrl, apiKey };
 }
 
 // 保存服务端配置到数据库
@@ -229,6 +236,24 @@ export async function splitScript(params: {
   model?: string;
 }): Promise<SplitScriptResult> {
   return serverFetch('/api/script/split', params);
+}
+
+export async function splitScriptStream(
+  params: {
+    script: string;
+    episodeCount?: number;
+    provider?: string;
+    model?: string;
+  },
+  callbacks: {
+    onProgress?: (data: any) => void;
+    onContent?: (chunk: string) => void;
+  }
+): Promise<SplitScriptResult> {
+  return serverSSE<SplitScriptResult>('/api/script/split', params, {
+    onProgress: callbacks.onProgress,
+    onContent: callbacks.onContent
+  });
 }
 
 export interface GenerateScriptResult {

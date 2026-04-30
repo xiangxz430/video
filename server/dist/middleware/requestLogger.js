@@ -221,47 +221,52 @@ export function requestLogger(req, res, next) {
         return originalWrite(chunk, ...args);
     };
     // AsyncLocalStorage 包裹，下游可记录 AI 调用
+    // 将 res.on('finish') 和 next() 都放在 run 回调内：
+    //   - next() 触发的异步路由处理器通过 async_hooks 继承上下文，recordAICall() 可正常获取 store
+    //   - res.on('finish') 在 run 作用域内注册，通过闭包直接引用 logCtx（不依赖 logStorage.getStore()）
     const logCtx = { aiApiCalls: [] };
-    logStorage.run(logCtx, () => { next(); });
-    res.on('finish', () => {
-        const duration = Date.now() - startTime;
-        try {
-            const apiKey = extractApiKey(req);
-            const apiKeyMasked = maskKey(apiKey);
-            const func = extractFunctionFromPath(reqPath);
-            const keyId = req.apiKeyId || apiKeyMasked;
-            let error = null;
-            if (res.statusCode >= 400) {
-                error = res.locals.errorMessage || `HTTP ${res.statusCode}`;
+    logStorage.run(logCtx, () => {
+        res.on('finish', () => {
+            const duration = Date.now() - startTime;
+            try {
+                const apiKey = extractApiKey(req);
+                const apiKeyMasked = maskKey(apiKey);
+                const func = extractFunctionFromPath(reqPath);
+                const keyId = req.apiKeyId || apiKeyMasked;
+                let error = null;
+                if (res.statusCode >= 400) {
+                    error = res.locals.errorMessage || `HTTP ${res.statusCode}`;
+                }
+                const responseBody = sanitizeBody(res._responseBody);
+                const aiApiCalls = logCtx.aiApiCalls.length > 0 ? logCtx.aiApiCalls : undefined;
+                const logEntry = {
+                    id: crypto.randomUUID(),
+                    keyId,
+                    timestamp: new Date().toISOString(),
+                    method: req.method,
+                    endpoint: reqPath,
+                    function: func,
+                    provider: req.body?.provider || inferDefaultProvider(reqPath) || 'unknown',
+                    model: req.body?.model || 'unknown',
+                    apiKeyMasked,
+                    statusCode: res.statusCode,
+                    duration,
+                    error,
+                    requestSummary: extractRequestSummary(req.body),
+                    requestBody,
+                    responseBody,
+                    ...(aiApiCalls ? { aiApiCalls } : {}),
+                };
+                // 异步写入 MongoDB（fire-and-forget，不阻塞请求）
+                getLogsCollection().insertOne(logEntry).catch((err) => {
+                    console.error('[RequestLogger] 写入 MongoDB 失败:', err.message);
+                });
             }
-            const responseBody = sanitizeBody(res._responseBody);
-            const aiApiCalls = logCtx.aiApiCalls.length > 0 ? logCtx.aiApiCalls : undefined;
-            const logEntry = {
-                id: crypto.randomUUID(),
-                keyId,
-                timestamp: new Date().toISOString(),
-                method: req.method,
-                endpoint: reqPath,
-                function: func,
-                provider: req.body?.provider || inferDefaultProvider(reqPath) || 'unknown',
-                model: req.body?.model || 'unknown',
-                apiKeyMasked,
-                statusCode: res.statusCode,
-                duration,
-                error,
-                requestSummary: extractRequestSummary(req.body),
-                requestBody,
-                responseBody,
-                ...(aiApiCalls ? { aiApiCalls } : {}),
-            };
-            // 异步写入 MongoDB（fire-and-forget，不阻塞请求）
-            getLogsCollection().insertOne(logEntry).catch((err) => {
-                console.error('[RequestLogger] 写入 MongoDB 失败:', err.message);
-            });
-        }
-        catch (error) {
-            console.error('[RequestLogger] 记录日志失败:', error);
-        }
+            catch (error) {
+                console.error('[RequestLogger] 记录日志失败:', error);
+            }
+        });
+        next();
     });
 }
 // ========== 导出 API（全部异步） ==========

@@ -315,7 +315,7 @@ async function initDefaultApiConfigs(): Promise<void> {
     { name: 'scriptGeneration', provider: 'volcengine', apiKey: 'f0ba8598-e4cf-4c30-94ea-a58e91f8d08f', model: 'doubao-1-5-pro-32k-250115', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
     { name: 'imageGeneration', provider: 'volcengine', apiKey: 'f0ba8598-e4cf-4c30-94ea-a58e91f8d08f', model: 'doubao-seedream-5-0-260128', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
     { name: 'videoGeneration', provider: 'volcengine', apiKey: 'f0ba8598-e4cf-4c30-94ea-a58e91f8d08f', model: 'doubao-seedance-1-5-pro-251215', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
-    { name: 'videoGeneration_seedance-2-0-fast', provider: 'volcengine', apiKey: 'f0ba8598-e4cf-4c30-94ea-a58e91f8d08f', model: 'doubao-seedance-2-0-fast', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
+    { name: 'videoGeneration_seedance-2-0-fast', provider: 'volcengine', apiKey: 'f0ba8598-e4cf-4c30-94ea-a58e91f8d08f', model: 'doubao-seedance-2.0-fast', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
     // Grsai - 图片生成
     { name: 'grsai_imageGeneration_nano-banana-fast', provider: 'grsai', apiKey: 'sk-31428f6c42e242a7b0ac10581c4ed017', model: 'nano-banana-fast', baseUrl: 'https://grsai.dakka.com.cn' },
     { name: 'grsai_imageGeneration_nano-banana', provider: 'grsai', apiKey: 'sk-31428f6c42e242a7b0ac10581c4ed017', model: 'nano-banana', baseUrl: 'https://grsai.dakka.com.cn' },
@@ -353,6 +353,14 @@ async function initDefaultApiConfigs(): Promise<void> {
     // OpenRouter - 视频生成 (Alpha)
     { name: 'videoGeneration_openrouter_openai/sora-2-pro', provider: 'openrouter', apiKey: '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', model: 'openai/sora-2-pro', baseUrl: 'https://openrouter.ai/api/v1' },
     { name: 'videoGeneration_openrouter_google/veo-3.1', provider: 'openrouter', apiKey: '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', model: 'google/veo-3.1', baseUrl: 'https://openrouter.ai/api/v1' },
+    { name: 'videoGeneration_openrouter_kwaivgi/kling-v3.0-pro', provider: 'openrouter', apiKey: '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', model: 'kwaivgi/kling-v3.0-pro', baseUrl: 'https://openrouter.ai/api/v1' },
+    { name: 'videoGeneration_openrouter_minimax/hailuo-2.3', provider: 'openrouter', apiKey: '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', model: 'minimax/hailuo-2.3', baseUrl: 'https://openrouter.ai/api/v1' },
+    { name: 'videoGeneration_openrouter_bytedance/seedance-2.0', provider: 'openrouter', apiKey: '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', model: 'bytedance/seedance-2.0', baseUrl: 'https://openrouter.ai/api/v1' },
+    { name: 'videoGeneration_openrouter_bytedance/seedance-2.0-fast', provider: 'openrouter', apiKey: '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', model: 'bytedance/seedance-2.0-fast', baseUrl: 'https://openrouter.ai/api/v1' },
+    { name: 'videoGeneration_openrouter_alibaba/wan-2.7', provider: 'openrouter', apiKey: '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', model: 'alibaba/wan-2.7', baseUrl: 'https://openrouter.ai/api/v1' },
+    { name: 'videoGeneration_openrouter_kwaivgi/kling-v3.0-standard', provider: 'openrouter', apiKey: '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', model: 'kwaivgi/kling-v3.0-standard', baseUrl: 'https://openrouter.ai/api/v1' },
+    { name: 'videoGeneration_openrouter_kwaivgi/kling-video-o1', provider: 'openrouter', apiKey: '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', model: 'kwaivgi/kling-video-o1', baseUrl: 'https://openrouter.ai/api/v1' },
+    { name: 'videoGeneration_openrouter_alibaba/wan-2.6', provider: 'openrouter', apiKey: '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', model: 'alibaba/wan-2.6', baseUrl: 'https://openrouter.ai/api/v1' },
     // Token Plan (百炼包月) - 文本生成
     { name: 'tokenplan_scriptGeneration_qwen3.6-plus', provider: 'tokenplan', apiKey: 'sk-e4e03e38190d45d1b6d5b2b2da9515df', model: 'qwen3.6-plus', baseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1' },
     { name: 'tokenplan_scriptGeneration_glm-5', provider: 'tokenplan', apiKey: 'sk-e4e03e38190d45d1b6d5b2b2da9515df', model: 'glm-5', baseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1' },

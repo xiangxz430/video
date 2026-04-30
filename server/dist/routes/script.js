@@ -2,51 +2,64 @@ import { Router } from 'express';
 import { splitScriptWithConfig, generateScriptWithFallback, extractEpisodesFromScript } from '../services/scriptSplitting.js';
 import { createApiConfig } from '../services/apiClients.js';
 const router = Router();
-// POST /api/script/split - 拆分剧本
+// POST /api/script/split - 拆分剧本（SSE流式响应）
 router.post('/split', async (req, res) => {
+    // 禁用 socket 超时
+    req.setTimeout(0);
+    res.setTimeout(0);
+    // 设置 SSE 响应头
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
     try {
         const { script, episodeCount, provider, model } = req.body;
         if (!script) {
-            return res.status(400).json({ error: '缺少剧本内容' });
+            res.write(`event: error\ndata: ${JSON.stringify({ message: '缺少剧本内容' })}\n\n`);
+            res.end();
+            return;
         }
+        const config = provider
+            ? createApiConfig(provider, model)
+            : createApiConfig('deepseek');
+        // 发送进度回调
+        const onProgress = (phase, current, total, message) => {
+            res.write(`event: progress\ndata: ${JSON.stringify({ phase, current, total, message })}\n\n`);
+        };
+        // 发送内容流回调
+        const onContentChunk = (chunk) => {
+            res.write(`event: content\ndata: ${JSON.stringify({ chunk })}\n\n`);
+        };
         let result;
-        if (provider) {
-            // 使用指定的 provider
-            const config = createApiConfig(provider, model);
-            if (episodeCount && episodeCount > 1) {
-                // 需要按集拆分
-                const episodes = await extractEpisodesFromScript(script, episodeCount, config);
-                const splitResult = await splitScriptWithConfig(script, config);
-                result = {
-                    ...splitResult,
-                    episodes: episodes.map(ep => ({
-                        title: ep.title,
-                        episodeNumber: ep.episodeNumber,
-                        content: ep.content
-                    }))
-                };
-            }
-            else {
-                result = await splitScriptWithConfig(script, config);
-            }
+        if (episodeCount && episodeCount > 1) {
+            // 需要按集拆分
+            const episodes = await extractEpisodesFromScript(script, episodeCount, config, onProgress, onContentChunk);
+            const splitResult = await splitScriptWithConfig(script, config, '', onProgress, onContentChunk);
+            result = {
+                ...splitResult,
+                episodes: episodes.map(ep => ({
+                    title: ep.title,
+                    episodeNumber: ep.episodeNumber,
+                    content: ep.content
+                }))
+            };
         }
         else {
-            // 使用默认配置（自动 fallback）
-            result = await splitScriptWithConfig(script, createApiConfig('deepseek'));
+            result = await splitScriptWithConfig(script, config, '', onProgress, onContentChunk);
         }
-        res.json({
-            characters: result.characters,
-            scenes: result.scenes,
-            episodes: result.episodes
-        });
+        // 发送完成事件
+        res.write(`event: done\ndata: ${JSON.stringify({ characters: result.characters, scenes: result.scenes, episodes: result.episodes })}\n\n`);
+        res.end();
     }
     catch (error) {
         console.error('Script split error:', error);
-        res.status(500).json({ error: error.message || '剧本拆分失败' });
+        res.write(`event: error\ndata: ${JSON.stringify({ message: error.message || '剧本拆分失败' })}\n\n`);
+        res.end();
     }
 });
 // POST /api/script/generate - 生成脚本
 router.post('/generate', async (req, res) => {
+    req.setTimeout(0);
+    res.setTimeout(0);
     try {
         const { prompt, systemPrompt, provider, model } = req.body;
         if (!prompt) {

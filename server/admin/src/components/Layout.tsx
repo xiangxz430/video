@@ -10,6 +10,7 @@ const navItems = [
   { path: '/stats', label: '用量统计', icon: '📈' },
   { path: '/config', label: 'AI 配置', icon: '⚙️' },
   { path: '/logs', label: '请求日志', icon: '📋' },
+  { path: '/version', label: '版本信息', icon: 'ℹ️' },
 ];
 
 export function Layout({ children }: LayoutProps) {

@@ -6,6 +6,7 @@ import { ApiKeys } from './pages/ApiKeys';
 import { Stats } from './pages/Stats';
 import { Config } from './pages/Config';
 import { Logs } from './pages/Logs';
+import { VersionInfo } from './pages/VersionInfo';
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
             <Route path="/stats" element={<Stats />} />
             <Route path="/config" element={<Config />} />
             <Route path="/logs" element={<Logs />} />
+            <Route path="/version" element={<VersionInfo />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Layout>

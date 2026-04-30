@@ -108,23 +108,6 @@ export async function getStatsByTime(range) {
             const end = new Date(start.getTime() + 86400000);
             buckets.push({ start, end, label: `${start.getMonth() + 1}/${start.getDate()}` });
         }
-        const results = await collection.aggregate([
-            { $match: { timestamp: { $gte: buckets[0].start.toISOString() } } },
-            { $group: {
-                    _id: {
-                        $let: {
-                            vars: { ts: { $dateFromString: { dateString: '$timestamp' } } },
-                            in: {
-                                $arrayElemAt: buckets.map((b, idx) => ({
-                                    $cond: [{ $and: [{ $gte: ['$$ts', b.start] }, { $lt: ['$$ts', b.end] }] }, idx, -1]
-                                }), { $cond: [{ $and: [{ $gte: ['$$ts', buckets[0].start] }, { $lt: ['$$ts', buckets[buckets.length - 1].end] }] }, 0, -1] })
-                            }
-                        }
-                    },
-                    count: { $sum: 1 },
-                } },
-        ]).toArray();
-        // 简化：用更高效的方式 - 逐桶 countDocuments
         const counts = await Promise.all(buckets.map(b => collection.countDocuments({
             timestamp: { $gte: b.start.toISOString(), $lt: b.end.toISOString() }
         })));

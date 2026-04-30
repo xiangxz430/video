@@ -56,6 +56,10 @@ export function Layout({ children }: LayoutProps) {
             <span className="mr-2">🚪</span>
             退出登录
           </button>
+          <div className="mt-3 text-center text-xs text-gray-500">
+            <div>{__BUILD_VERSION__}</div>
+            <div className="mt-0.5">{__BUILD_TIME__}</div>
+          </div>
         </div>
       </aside>
 

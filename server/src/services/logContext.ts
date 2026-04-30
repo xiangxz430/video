@@ -22,14 +22,18 @@ export function recordAICall(call: AIApiCall): void {
 
 const AI_TRUNCATABLE_FIELDS = new Set([
   'script', 'content', 'episodeContent', 'prompt',
-  'firstFrameImage', 'lastFrameImage',
   'firstFrameRefImage', 'lastFrameRefImage',
   'image', 'imageUrl', 'videoUrl', 'url',
 ]);
-// referenceImage 由下方逻辑单独处理（完全替换为占位符，不截断）
+// firstFrameImage / lastFrameImage / referenceImage / referenceImages 由下方逻辑单独处理（完全替换为占位符，不截断）
 
 const AI_TRUNCATE_LIMIT = 300;
 const AI_ARRAY_LIMIT = 5;
+
+/** 判断字符串是否为 base64 图片数据（以 data:image/ 开头或超长字符串） */
+function isBase64Image(value: string): boolean {
+  return value.startsWith('data:image/') || value.length > 10000;
+}
 
 /**
  * 脱敏 AI API 调用的请求/响应体
@@ -58,7 +62,37 @@ export function sanitizeAICallBody(body: any, depth: number = 0): any {
     const result: Record<string, any> = {};
     for (const key of Object.keys(body)) {
       const value = body[key];
-      if (key === 'referenceImage') {
+      if (key === 'firstFrameImage') {
+        // 首帧图片 base64 → 替换为占位符
+        result[key] = (typeof value === 'string' && isBase64Image(value))
+          ? '[base64 firstFrameImage omitted]'
+          : sanitizeAICallBody(value, depth + 1);
+      } else if (key === 'lastFrameImage') {
+        // 尾帧图片 base64 → 替换为占位符
+        result[key] = (typeof value === 'string' && isBase64Image(value))
+          ? '[base64 lastFrameImage omitted]'
+          : sanitizeAICallBody(value, depth + 1);
+      } else if (key === 'referenceImages') {
+        // 参考图片数组 → 替换为占位符
+        if (Array.isArray(value)) {
+          const count = value.length;
+          if (count > 0) {
+            const first = value[0];
+            if (typeof first === 'object' && first !== null && 'data' in first) {
+              result[key] = value.map((item: any, idx: number) => ({
+                ...item,
+                data: `[base64 referenceImage #${idx + 1} omitted]`,
+              }));
+            } else {
+              result[key] = [`[base64 referenceImages x ${count} omitted]`];
+            }
+          } else {
+            result[key] = value;
+          }
+        } else {
+          result[key] = sanitizeAICallBody(value, depth + 1);
+        }
+      } else if (key === 'referenceImage') {
         // 完全替换 base64 内容，不保留任何 base64 数据
         if (typeof value === 'string') {
           result[key] = '[base64 image, see referenceImageMeta]';

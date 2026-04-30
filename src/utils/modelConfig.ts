@@ -145,6 +145,8 @@ function getModelDisplayName(provider: string, modelId: string): string {
     'nano-banana-2-cl': 'Nano-Banana-2-CL',
     'nano-banana-2-4k-cl': 'Nano-Banana-2-4K-CL',
     'nano-banana-3': 'Nano-Banana-3 (Gemini 3.1 Flash)',
+    'gpt-image-2': 'GPT-Image-2',
+    'gpt-image-2-vip': 'GPT-Image-2-VIP',
     'grsai-sora-2': 'Sora2',
     // DeepSeek
     'deepseek-v4-pro': 'DeepSeek-V4-Pro',
@@ -267,6 +269,8 @@ export function getModelDescription(provider: string, modelId: string): string {
       'nano-banana-2-cl': 'Grsai-二代高清',
       'nano-banana-2-4k-cl': 'Grsai-二代4K',
       'nano-banana-3': 'Grsai-Gemini3.1',
+      'gpt-image-2': 'Grsai-GPT图片',
+      'gpt-image-2-vip': 'Grsai-GPT图片VIP',
       'grsai-sora-2': 'Grsai-Sora2视频',
     };
     return grsaiDesc[modelId] || 'Grsai';
@@ -363,6 +367,8 @@ export function getModelPrice(provider: string, modelId: string): string | undef
       'nano-banana-2-cl': '¥0.10-0.20/张',
       'nano-banana-2-4k-cl': '¥0.18-0.36/张',
       'nano-banana-3': '¥0.04-0.08/张',
+      'gpt-image-2': '¥0.15-0.30/张',
+      'gpt-image-2-vip': '¥0.20-0.40/张',
       'grsai-sora-2': '¥0.08/秒',
     };
     return grsaiPrice[modelId];

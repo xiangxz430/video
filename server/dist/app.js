@@ -20,7 +20,7 @@ import { config } from './config/index.js';
 import { initializeFromEnv } from './services/apiKeyService.js';
 import { connectMongo, closeMongo } from './services/mongoService.js';
 const app = express();
-app.use(helmet({ contentSecurityPolicy: false }));
+app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' }, crossOriginOpenerPolicy: false }));
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 // 初始化：从环境变量导入默认 API Key

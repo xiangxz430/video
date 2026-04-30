@@ -65,7 +65,7 @@ export async function queryLogs(params: QueryLogsParams): Promise<QueryLogsResul
       .sort({ timestamp: -1 })
       .skip((page - 1) * pageSize)
       .limit(pageSize)
-      .toArray(),
+      .toArray() as unknown as RequestLog[],
   ]);
 
   return { logs, total, page, pageSize };

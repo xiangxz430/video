@@ -3,13 +3,14 @@ import fs from 'fs';
 import path from 'path';
 import { config, getProviderConfig } from '../config/index.js';
 import { getOverviewStats, getStatsByTime, getStatsByKey, getStatsByKeyDetail, getStatsByFunction, getStatsByProvider, getStatsByModel, getSystemInfo, } from '../services/statsService.js';
-import { queryLogs, getLogById } from '../services/logService.js';
+import { queryLogs, getLogById, deleteLog } from '../services/logService.js';
+import { maskKey } from '../services/apiKeyService.js';
 const router = Router();
 // ==================== 统计接口 ====================
 // GET /api/admin/stats/overview - 仪表盘概览数据
-router.get('/stats/overview', (req, res) => {
+router.get('/stats/overview', async (req, res) => {
     try {
-        const data = getOverviewStats();
+        const data = await getOverviewStats();
         res.json({ success: true, data });
     }
     catch (error) {
@@ -18,7 +19,7 @@ router.get('/stats/overview', (req, res) => {
     }
 });
 // GET /api/admin/stats/by-time - 按时间统计
-router.get('/stats/by-time', (req, res) => {
+router.get('/stats/by-time', async (req, res) => {
     try {
         const range = req.query.range;
         if (!range || !['day', 'week', 'month'].includes(range)) {
@@ -27,7 +28,7 @@ router.get('/stats/by-time', (req, res) => {
                 error: '无效的 range 参数，必须是 day、week 或 month',
             });
         }
-        const data = getStatsByTime(range);
+        const data = await getStatsByTime(range);
         res.json({ success: true, data });
     }
     catch (error) {
@@ -36,9 +37,9 @@ router.get('/stats/by-time', (req, res) => {
     }
 });
 // GET /api/admin/stats/by-key - 按 Key 统计
-router.get('/stats/by-key', (req, res) => {
+router.get('/stats/by-key', async (req, res) => {
     try {
-        const data = getStatsByKey();
+        const data = await getStatsByKey();
         res.json({ success: true, data });
     }
     catch (error) {
@@ -47,9 +48,9 @@ router.get('/stats/by-key', (req, res) => {
     }
 });
 // GET /api/admin/stats/by-key-detail - 按 Key 详细统计（含模型细分+费用估算）
-router.get('/stats/by-key-detail', (req, res) => {
+router.get('/stats/by-key-detail', async (req, res) => {
     try {
-        const data = getStatsByKeyDetail();
+        const data = await getStatsByKeyDetail();
         res.json({ success: true, data });
     }
     catch (error) {
@@ -58,9 +59,9 @@ router.get('/stats/by-key-detail', (req, res) => {
     }
 });
 // GET /api/admin/stats/by-function - 按功能统计
-router.get('/stats/by-function', (req, res) => {
+router.get('/stats/by-function', async (req, res) => {
     try {
-        const data = getStatsByFunction();
+        const data = await getStatsByFunction();
         res.json({ success: true, data });
     }
     catch (error) {
@@ -69,9 +70,9 @@ router.get('/stats/by-function', (req, res) => {
     }
 });
 // GET /api/admin/stats/by-provider - 按 Provider 统计
-router.get('/stats/by-provider', (req, res) => {
+router.get('/stats/by-provider', async (req, res) => {
     try {
-        const data = getStatsByProvider();
+        const data = await getStatsByProvider();
         res.json({ success: true, data });
     }
     catch (error) {
@@ -80,9 +81,9 @@ router.get('/stats/by-provider', (req, res) => {
     }
 });
 // GET /api/admin/stats/by-model - 按 Provider+Model 统计
-router.get('/stats/by-model', (req, res) => {
+router.get('/stats/by-model', async (req, res) => {
     try {
-        const data = getStatsByModel();
+        const data = await getStatsByModel();
         res.json({ success: true, data });
     }
     catch (error) {
@@ -92,13 +93,13 @@ router.get('/stats/by-model', (req, res) => {
 });
 // ==================== 日志接口 ====================
 // GET /api/admin/logs - 请求日志列表
-router.get('/logs', (req, res) => {
+router.get('/logs', async (req, res) => {
     try {
         const page = req.query.page ? parseInt(req.query.page) : 1;
         const pageSize = req.query.pageSize
             ? parseInt(req.query.pageSize)
             : 20;
-        const result = queryLogs({
+        const result = await queryLogs({
             page,
             pageSize,
             endpoint: req.query.endpoint,
@@ -118,10 +119,10 @@ router.get('/logs', (req, res) => {
     }
 });
 // GET /api/admin/logs/:id - 单条日志详情
-router.get('/logs/:id', (req, res) => {
+router.get('/logs/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const log = getLogById(id);
+        const log = await getLogById(id);
         if (!log) {
             return res.status(404).json({
                 success: false,
@@ -135,21 +136,33 @@ router.get('/logs/:id', (req, res) => {
         res.status(500).json({ success: false, error: '获取日志详情失败' });
     }
 });
-// ==================== 配置管理接口 ====================
-// API Key 脱敏函数：显示前6位 + **** + 后4位
-function maskApiKey(key) {
-    if (!key || key.length < 10) {
-        return key ? '****' : '';
+// DELETE /api/admin/logs/:id - 删除单条日志
+router.delete('/logs/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const deleted = await deleteLog(id);
+        if (!deleted) {
+            return res.status(404).json({
+                success: false,
+                error: '日志不存在',
+            });
+        }
+        res.json({ success: true, message: '日志已删除' });
     }
-    return key.slice(0, 6) + '****' + key.slice(-4);
-}
+    catch (error) {
+        console.error('删除日志失败:', error);
+        res.status(500).json({ success: false, error: '删除日志失败' });
+    }
+});
+// ==================== 配置管理接口 ====================
+// Provider API Key 脱敏（复用统一脱敏函数）
 // GET /api/admin/config/providers - 获取所有 Provider 配置（密钥脱敏）
 router.get('/config/providers', (req, res) => {
     try {
         const providers = config.providers;
         const result = Object.entries(providers).map(([name, cfg]) => ({
             name,
-            apiKey: maskApiKey(cfg.apiKey),
+            apiKey: maskKey(cfg.apiKey),
             baseUrl: cfg.baseUrl,
             hasKey: !!cfg.apiKey && cfg.apiKey.length > 0,
         }));
@@ -160,6 +173,8 @@ router.get('/config/providers', (req, res) => {
         res.status(500).json({ success: false, error: '获取 Provider 配置失败' });
     }
 });
+// .env 文件写入互斥锁（防止并发写入导致文件损坏）
+let envWriteLock = Promise.resolve();
 // PUT /api/admin/config/providers - 更新 Provider 配置
 router.put('/config/providers', async (req, res) => {
     try {
@@ -178,42 +193,45 @@ router.put('/config/providers', async (req, res) => {
                 error: `无效的 provider，必须是以下之一: ${validProviders.join(', ')}`,
             });
         }
-        // 更新 .env 文件
-        const envPath = path.join(process.cwd(), '.env');
-        let envContent = '';
-        if (fs.existsSync(envPath)) {
-            envContent = fs.readFileSync(envPath, 'utf-8');
-        }
-        // 构建环境变量名
-        const providerUpper = provider.toUpperCase();
-        const apiKeyEnvName = `${providerUpper}_API_KEY`;
-        const baseUrlEnvName = `${providerUpper}_BASE_URL`;
-        // 更新或添加 API Key
+        // 先更新内存配置（立即生效，不阻塞响应）
         if (apiKey !== undefined) {
-            const apiKeyRegex = new RegExp(`^${apiKeyEnvName}=.*$`, 'm');
-            if (apiKeyRegex.test(envContent)) {
-                envContent = envContent.replace(apiKeyRegex, `${apiKeyEnvName}=${apiKey}`);
-            }
-            else {
-                envContent += `\n${apiKeyEnvName}=${apiKey}`;
-            }
-            // 更新内存中的配置
             config.providers[provider].apiKey = apiKey;
         }
-        // 更新或添加 Base URL
         if (baseUrl !== undefined) {
-            const baseUrlRegex = new RegExp(`^${baseUrlEnvName}=.*$`, 'm');
-            if (baseUrlRegex.test(envContent)) {
-                envContent = envContent.replace(baseUrlRegex, `${baseUrlEnvName}=${baseUrl}`);
-            }
-            else {
-                envContent += `\n${baseUrlEnvName}=${baseUrl}`;
-            }
-            // 更新内存中的配置
             config.providers[provider].baseUrl = baseUrl;
         }
-        // 写回 .env 文件
-        fs.writeFileSync(envPath, envContent.trim() + '\n', 'utf-8');
+        // 异步串行写入 .env 文件（互斥锁防止并发损坏）
+        envWriteLock = envWriteLock.then(async () => {
+            const envPath = path.join(process.cwd(), '.env');
+            let envContent = '';
+            if (fs.existsSync(envPath)) {
+                envContent = fs.readFileSync(envPath, 'utf-8');
+            }
+            const providerUpper = provider.toUpperCase();
+            const apiKeyEnvName = `${providerUpper}_API_KEY`;
+            const baseUrlEnvName = `${providerUpper}_BASE_URL`;
+            if (apiKey !== undefined) {
+                const apiKeyRegex = new RegExp(`^${apiKeyEnvName}=.*$`, 'm');
+                if (apiKeyRegex.test(envContent)) {
+                    envContent = envContent.replace(apiKeyRegex, `${apiKeyEnvName}=${apiKey}`);
+                }
+                else {
+                    envContent += `\n${apiKeyEnvName}=${apiKey}`;
+                }
+            }
+            if (baseUrl !== undefined) {
+                const baseUrlRegex = new RegExp(`^${baseUrlEnvName}=.*$`, 'm');
+                if (baseUrlRegex.test(envContent)) {
+                    envContent = envContent.replace(baseUrlRegex, `${baseUrlEnvName}=${baseUrl}`);
+                }
+                else {
+                    envContent += `\n${baseUrlEnvName}=${baseUrl}`;
+                }
+            }
+            fs.writeFileSync(envPath, envContent.trim() + '\n', 'utf-8');
+        }).catch(err => {
+            console.error('[admin] .env 异步写入失败:', err);
+        });
         res.json({
             success: true,
             message: `Provider ${provider} 配置已更新`,

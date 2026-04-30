@@ -6,8 +6,18 @@ export function authMiddleware(req, res, next) {
         return res.status(401).json({ error: '缺少认证信息' });
     }
     const token = authHeader.slice(7);
-    // 向后兼容：先检查环境变量 API_KEY，再检查 apiKeyService
-    if (token === config.apiKey || validateApiKey(token)) {
+    // 先尝试 apiKeyService 验证（返回 keyId）
+    const keyId = validateApiKey(token);
+    if (keyId) {
+        req.apiKeyId = keyId;
+        return next();
+    }
+    // 向后兼容：环境变量 API_KEY 直接匹配
+    if (token === config.apiKey) {
+        // 环境变量 key 在启动时已被 initializeFromEnv 导入，
+        // 此处兜底：按 key 值查找 keyId（确保 req.apiKeyId 一定有值）
+        const fallbackId = validateApiKey(token); // 已导入则能找到
+        req.apiKeyId = fallbackId || '__env_key__';
         return next();
     }
     return res.status(401).json({ error: '无效的API密钥' });

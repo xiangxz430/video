@@ -1,92 +1,103 @@
-import { getAllLogs, getLogById as getLogByIdFromMiddleware } from '../middleware/requestLogger.js';
+import { getLogsCollection } from '../services/mongoService.js';
 /**
- * 分页查询日志
+ * 分页查询日志（MongoDB 查询版）
+ * 利用索引 + MongoDB 原生 filter + sort + skip + limit
  */
-export function queryLogs(params) {
+export async function queryLogs(params) {
     const { page = 1, pageSize = 20, endpoint, function: func, provider, statusCode, startTime, endTime, } = params;
-    // 获取所有日志
-    let logs = getAllLogs();
-    // 应用筛选条件
-    if (endpoint) {
-        logs = logs.filter(log => log.endpoint.includes(endpoint));
+    // 构建 MongoDB 查询条件
+    const filter = {};
+    if (endpoint)
+        filter.endpoint = { $regex: endpoint, $options: 'i' };
+    if (func)
+        filter.function = func;
+    if (provider)
+        filter.provider = provider;
+    if (statusCode !== undefined)
+        filter.statusCode = statusCode;
+    if (startTime || endTime) {
+        filter.timestamp = {};
+        if (startTime)
+            filter.timestamp.$gte = startTime;
+        if (endTime)
+            filter.timestamp.$lte = endTime;
     }
-    if (func) {
-        logs = logs.filter(log => log.function === func);
-    }
-    if (provider) {
-        logs = logs.filter(log => log.provider === provider);
-    }
-    if (statusCode !== undefined) {
-        logs = logs.filter(log => log.statusCode === statusCode);
-    }
-    if (startTime) {
-        const start = new Date(startTime).getTime();
-        logs = logs.filter(log => new Date(log.timestamp).getTime() >= start);
-    }
-    if (endTime) {
-        const end = new Date(endTime).getTime();
-        logs = logs.filter(log => new Date(log.timestamp).getTime() <= end);
-    }
-    // 按时间倒序排序
-    logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    // 计算总数
-    const total = logs.length;
-    // 分页
-    const startIndex = (page - 1) * pageSize;
-    const endIndex = startIndex + pageSize;
-    const paginatedLogs = logs.slice(startIndex, endIndex);
-    return {
-        logs: paginatedLogs,
-        total,
-        page,
-        pageSize,
-    };
+    const collection = getLogsCollection();
+    // 并行执行 count 和 find（MongoDB 自动利用索引）
+    // 使用 projection 排除大字段，加速列表查询
+    const [total, logs] = await Promise.all([
+        collection.countDocuments(filter),
+        collection.find(filter)
+            .project({
+            requestBody: 0,
+            responseBody: 0,
+            'aiApiCalls.requestBody': 0,
+            'aiApiCalls.responseBody': 0,
+        })
+            .sort({ timestamp: -1 })
+            .skip((page - 1) * pageSize)
+            .limit(pageSize)
+            .toArray(),
+    ]);
+    return { logs, total, page, pageSize };
 }
 /**
  * 获取单条日志详情
  */
-export function getLogById(id) {
-    return getLogByIdFromMiddleware(id);
+export async function getLogById(id) {
+    return getLogsCollection().findOne({ id });
+}
+/**
+ * 删除单条日志
+ */
+export async function deleteLog(id) {
+    const result = await getLogsCollection().deleteOne({ id });
+    return result.deletedCount === 1;
 }
 /**
  * 获取最近的 N 条日志
  */
-export function getRecentLogs(count = 10) {
-    const logs = getAllLogs();
-    return logs
-        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-        .slice(0, count);
+export async function getRecentLogs(count = 10) {
+    return getLogsCollection()
+        .find()
+        .sort({ timestamp: -1 })
+        .limit(count)
+        .toArray();
 }
 /**
  * 按功能筛选日志
  */
-export function getLogsByFunction(func) {
-    const logs = getAllLogs();
-    return logs.filter(log => log.function === func);
+export async function getLogsByFunction(func) {
+    return getLogsCollection()
+        .find({ function: func })
+        .sort({ timestamp: -1 })
+        .limit(500)
+        .toArray();
 }
 /**
  * 按 Provider 筛选日志
  */
-export function getLogsByProvider(provider) {
-    const logs = getAllLogs();
-    return logs.filter(log => log.provider === provider);
+export async function getLogsByProvider(provider) {
+    return getLogsCollection()
+        .find({ provider })
+        .sort({ timestamp: -1 })
+        .limit(500)
+        .toArray();
 }
 /**
  * 按时间范围筛选日志
  */
-export function getLogsByTimeRange(startTime, endTime) {
-    const start = new Date(startTime).getTime();
-    const end = new Date(endTime).getTime();
-    const logs = getAllLogs();
-    return logs.filter(log => {
-        const logTime = new Date(log.timestamp).getTime();
-        return logTime >= start && logTime <= end;
-    });
+export async function getLogsByTimeRange(startTime, endTime) {
+    return getLogsCollection()
+        .find({ timestamp: { $gte: startTime, $lte: endTime } })
+        .sort({ timestamp: -1 })
+        .limit(500)
+        .toArray();
 }
 /**
  * 获取今日日志
  */
-export function getTodayLogs() {
+export async function getTodayLogs() {
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     return getLogsByTimeRange(startOfDay.toISOString(), now.toISOString());
@@ -94,10 +105,10 @@ export function getTodayLogs() {
 /**
  * 获取本周日志
  */
-export function getThisWeekLogs() {
+export async function getThisWeekLogs() {
     const now = new Date();
     const dayOfWeek = now.getDay();
-    const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // 调整为周一开始
+    const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
     const startOfWeek = new Date(now.getFullYear(), now.getMonth(), diff);
     startOfWeek.setHours(0, 0, 0, 0);
     return getLogsByTimeRange(startOfWeek.toISOString(), now.toISOString());
@@ -105,7 +116,7 @@ export function getThisWeekLogs() {
 /**
  * 获取本月日志
  */
-export function getThisMonthLogs() {
+export async function getThisMonthLogs() {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     return getLogsByTimeRange(startOfMonth.toISOString(), now.toISOString());

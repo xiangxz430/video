@@ -2,6 +2,10 @@ export declare const config: {
     port: number;
     apiKey: string;
     adminKey: string;
+    mongodb: {
+        uri: string;
+        dbName: string;
+    };
     providers: {
         deepseek: {
             apiKey: string;

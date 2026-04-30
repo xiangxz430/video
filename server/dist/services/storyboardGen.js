@@ -1,5 +1,5 @@
 import { callAI, callOpenAIStreaming } from './apiClients.js';
-import { recordAICall } from './logContext.js';
+import { recordAICall, sanitizeAICallBody } from './logContext.js';
 // 计算两段文本的相似度（0-1，基于共同子串）
 function textSimilarity(a, b) {
     if (!a || !b)
@@ -97,7 +97,9 @@ ${targetShot.narrationSource || targetShot.description}
                     model: config.model || '',
                     endpoint: `${config.baseUrl || ''}/chat/completions`,
                     requestTime: Date.now() - regenStartTime,
-                    status: 'success'
+                    status: 'success',
+                    requestBody: sanitizeAICallBody({ shotNumber: targetShot.shotNumber, action: 'regenerate-duplicate' }),
+                    responseBody: sanitizeAICallBody({ responsePreview: response?.slice(0, 200) }),
                 });
                 const jsonMatch = response.match(/\{[\s\S]*\}/);
                 if (jsonMatch) {
@@ -116,7 +118,8 @@ ${targetShot.narrationSource || targetShot.description}
                     endpoint: `${config.baseUrl || ''}/chat/completions`,
                     requestTime: Date.now() - regenStartTime,
                     status: 'failed',
-                    errorMessage: err instanceof Error ? err.message : '重新生成失败'
+                    errorMessage: err instanceof Error ? err.message : '重新生成失败',
+                    requestBody: sanitizeAICallBody({ shotNumber: targetShot.shotNumber, action: 'regenerate-duplicate' }),
                 });
             }
         }
@@ -187,7 +190,8 @@ ${episodeContent}
         model: config.model || '',
         endpoint,
         requestTime: Date.now() - callStartTime,
-        status: 'success'
+        status: 'success',
+        requestBody: sanitizeAICallBody({ action: 'splitShots', episodeContentLength: episodeContent.length, characterInfoLength: characterInfo.length, sceneInfoLength: sceneInfo.length }),
     });
     const shots = parseStoryboardJSON(content);
     return shots.map((shot, idx) => ({
@@ -315,7 +319,9 @@ ${JSON.stringify(shot, null, 2)}
                     model: config.model || '',
                     endpoint,
                     requestTime: Date.now() - shotStartTime,
-                    status: 'success'
+                    status: 'success',
+                    requestBody: sanitizeAICallBody({ action: 'enrichShot', shotNumber: i + 1, scene: shot.scene }),
+                    responseBody: sanitizeAICallBody({ responsePreview: aiResponse?.slice(0, 200) }),
                 });
                 const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
                 if (jsonMatch) {
@@ -360,7 +366,8 @@ ${JSON.stringify(shot, null, 2)}
                     endpoint: `${config.baseUrl || ''}/chat/completions`,
                     requestTime: Date.now() - shotStartTime,
                     status: 'failed',
-                    errorMessage: error?.message || '未知错误'
+                    errorMessage: error?.message || '未知错误',
+                    requestBody: sanitizeAICallBody({ action: 'enrichShot', shotNumber: i + 1, scene: shot.scene }),
                 });
                 if (retry === maxRetries - 1) {
                     onProgress?.(`❌ 第 ${i + 1}/${shots.length} 个镜头生成失败: ${error?.message || '未知错误'}，使用原始数据`, 2, 2);

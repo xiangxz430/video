@@ -81,6 +81,10 @@ export interface StoryboardScene {
 export interface ImageGenParams {
     prompt: string;
     referenceImage?: string | string[];
+    referenceImageMeta?: {
+        fileName: string;
+        filePath: string;
+    }[];
     aspectRatio?: string;
     model?: string;
     size?: string;
@@ -140,9 +144,12 @@ export interface AIApiCall {
     errorMessage?: string;
     pollAttempts?: number;
     taskId?: string;
+    requestBody?: Record<string, any>;
+    responseBody?: Record<string, any>;
 }
 export interface RequestLog {
     id: string;
+    keyId?: string;
     timestamp: string;
     method: string;
     endpoint: string;

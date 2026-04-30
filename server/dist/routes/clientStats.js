@@ -1,13 +1,13 @@
 import { Router } from 'express';
-import { getStatsByKey } from '../services/statsService.js';
-import { getAllLogs } from '../middleware/requestLogger.js';
+import { getLogsByUser } from '../middleware/requestLogger.js';
 import { estimateCallCost, getModelDisplayInfo } from '../services/modelPricing.js';
+import { maskKey } from '../services/apiKeyService.js';
 const router = Router();
 /**
  * GET /api/stats/usage - 获取当前 API Key 的调用统计
  * 根据请求头中的 Authorization 提取 API Key，返回该 Key 的调用量
  */
-router.get('/usage', (req, res) => {
+router.get('/usage', async (req, res) => {
     try {
         // 从请求头提取 API Key
         const authHeader = req.headers.authorization;
@@ -19,89 +19,62 @@ router.get('/usage', (req, res) => {
         }
         const apiKey = authHeader.slice(7);
         // 脱敏 API Key（前6位 + **** + 后6位）
-        const maskedKey = maskApiKey(apiKey);
-        // 获取所有统计
-        const allKeyStats = getStatsByKey();
-        // 找到当前 Key 的统计
-        const currentKeyStats = allKeyStats.find(stats => stats.maskedKey === maskedKey);
-        // 获取所有日志
-        const allLogs = getAllLogs();
-        // 过滤出当前 Key 的日志
-        const keyLogs = allLogs.filter(log => log.apiKeyMasked === maskedKey);
-        // 按功能分类统计
+        const maskedKey = maskKey(apiKey);
+        // 从 MongoDB 获取当前用户的日志（走 keyId 索引，0 跨用户开销）
+        const keyId = req.apiKeyId;
+        const keyLogs = keyId ? await getLogsByUser(keyId) : [];
+        // 单遍遍历：同时计算 byFunction / byProvider / byModel / 成功率 / 最后使用时间
         const statsByFunction = {};
-        keyLogs.forEach(log => {
-            const func = log.function;
-            if (!statsByFunction[func]) {
-                statsByFunction[func] = { total: 0, success: 0, failed: 0 };
-            }
-            statsByFunction[func].total++;
-            if (log.statusCode >= 200 && log.statusCode < 300) {
-                statsByFunction[func].success++;
-            }
-            else {
-                statsByFunction[func].failed++;
-            }
-        });
-        // 按 Provider 分类统计
         const statsByProvider = {};
-        keyLogs.forEach(log => {
-            const provider = log.provider;
-            if (!statsByProvider[provider]) {
-                statsByProvider[provider] = { total: 0, success: 0, failed: 0 };
-            }
-            statsByProvider[provider].total++;
-            if (log.statusCode >= 200 && log.statusCode < 300) {
-                statsByProvider[provider].success++;
-            }
-            else {
-                statsByProvider[provider].failed++;
-            }
-        });
-        // 按 Provider+Model 分类统计（含费用估算）
         const statsByModel = {};
         let totalCost = 0;
-        keyLogs.forEach(log => {
-            const modelKey = `${log.provider}::${log.model}`;
-            const func = log.function || 'other';
-            const isSuccess = log.statusCode >= 200 && log.statusCode < 300;
+        let successCalls = 0;
+        let lastUsedAt = null;
+        for (const log of keyLogs) {
+            const isOk = log.statusCode >= 200 && log.statusCode < 300;
+            if (isOk)
+                successCalls++;
+            // byFunction
+            const func = log.function;
+            if (!statsByFunction[func])
+                statsByFunction[func] = { total: 0, success: 0, failed: 0 };
+            statsByFunction[func].total++;
+            isOk ? statsByFunction[func].success++ : statsByFunction[func].failed++;
+            // byProvider
+            const prov = log.provider;
+            if (!statsByProvider[prov])
+                statsByProvider[prov] = { total: 0, success: 0, failed: 0 };
+            statsByProvider[prov].total++;
+            isOk ? statsByProvider[prov].success++ : statsByProvider[prov].failed++;
+            // byModel + 费用
+            const modelKey = `${prov}::${log.model}`;
+            const logFunc = func || 'other';
             if (!statsByModel[modelKey]) {
-                const display = getModelDisplayInfo(log.provider, log.model);
+                const display = getModelDisplayInfo(prov, log.model);
                 statsByModel[modelKey] = {
-                    provider: log.provider,
-                    model: log.model,
-                    displayProvider: display.providerName,
-                    displayModel: display.modelName,
-                    total: 0,
-                    success: 0,
-                    failed: 0,
-                    estimatedCost: 0,
+                    provider: prov, model: log.model,
+                    displayProvider: display.providerName, displayModel: display.modelName,
+                    total: 0, success: 0, failed: 0, estimatedCost: 0,
                 };
             }
             statsByModel[modelKey].total++;
-            if (isSuccess) {
-                statsByModel[modelKey].success++;
-            }
-            else {
-                statsByModel[modelKey].failed++;
-            }
-            // 逐条计算费用
-            const callCost = estimateCallCost(log.provider, log.model, func, isSuccess);
+            isOk ? statsByModel[modelKey].success++ : statsByModel[modelKey].failed++;
+            const callCost = estimateCallCost(prov, log.model, logFunc, isOk);
             statsByModel[modelKey].estimatedCost += callCost;
             totalCost += callCost;
-        });
+            // 最后使用时间
+            if (!lastUsedAt || log.timestamp > lastUsedAt)
+                lastUsedAt = log.timestamp;
+        }
         // 四舍五入费用
         for (const key of Object.keys(statsByModel)) {
             statsByModel[key].estimatedCost = Math.round(statsByModel[key].estimatedCost * 10000) / 10000;
         }
         totalCost = Math.round(totalCost * 10000) / 10000;
-        // 计算成功率
+        // 成功率
         const totalCalls = keyLogs.length;
-        const successCalls = keyLogs.filter(log => log.statusCode >= 200 && log.statusCode < 300).length;
         const failedCalls = totalCalls - successCalls;
         const successRate = totalCalls > 0 ? ((successCalls / totalCalls) * 100).toFixed(1) : '0';
-        // 获取最后使用时间
-        const lastUsedAt = currentKeyStats?.lastUsedAt || null;
         res.json({
             success: true,
             data: {
@@ -126,15 +99,4 @@ router.get('/usage', (req, res) => {
         });
     }
 });
-/**
- * 脱敏 API Key
- */
-function maskApiKey(key) {
-    if (!key)
-        return 'unknown';
-    if (key.length <= 12) {
-        return key.slice(0, 3) + '***' + key.slice(-3);
-    }
-    return key.slice(0, 6) + '****' + key.slice(-6);
-}
 export { router as clientStatsRouter };

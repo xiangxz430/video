@@ -18,6 +18,7 @@ import { adminRouter } from './routes/admin.js';
 import { clientStatsRouter } from './routes/clientStats.js';
 import { config } from './config/index.js';
 import { initializeFromEnv } from './services/apiKeyService.js';
+import { connectMongo, closeMongo } from './services/mongoService.js';
 const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
@@ -50,12 +51,36 @@ app.use('/api/image', imageRouter);
 app.use('/api/video', videoRouter);
 // 客户端统计路由（需要认证）
 app.use('/api/stats', clientStatsRouter);
-const server = app.listen(config.port, () => {
-    console.log(`Server running on port ${config.port}`);
-    console.log(`Health check: http://localhost:${config.port}/api/health`);
-});
-// 设置请求超时为5分钟（图片/视频生成耗时长）
-server.timeout = 300_000;
-server.requestTimeout = 300_000;
-server.headersTimeout = 310_000;
-server.keepAliveTimeout = 310_000;
+// 启动服务：先连接 MongoDB，再监听端口
+async function startServer() {
+    try {
+        await connectMongo();
+    }
+    catch (error) {
+        console.error('[启动] MongoDB 连接失败，服务无法启动。请检查 MONGODB_URI 配置。');
+        process.exit(1);
+    }
+    const server = app.listen(config.port, () => {
+        console.log(`Server running on port ${config.port}`);
+        console.log(`Health check: http://localhost:${config.port}/api/health`);
+    });
+    // 设置请求超时为5分钟（图片/视频生成耗时长）
+    server.timeout = 300_000;
+    server.requestTimeout = 300_000;
+    server.headersTimeout = 310_000;
+    server.keepAliveTimeout = 310_000;
+    // 优雅关闭
+    process.on('SIGTERM', async () => {
+        console.log('[关闭] 收到 SIGTERM，正在关闭...');
+        server.close();
+        await closeMongo();
+        process.exit(0);
+    });
+    process.on('SIGINT', async () => {
+        console.log('[关闭] 收到 SIGINT，正在关闭...');
+        server.close();
+        await closeMongo();
+        process.exit(0);
+    });
+}
+startServer();

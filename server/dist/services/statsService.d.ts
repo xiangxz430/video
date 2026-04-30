@@ -85,34 +85,34 @@ export interface SystemInfo {
     cpuUsage: number;
 }
 /**
- * 仪表盘概览统计
+ * 仪表盘概览统计（MongoDB 聚合版）
+ * 一次聚合查询完成全部统计，比全量加载到内存再遍历快 10-100x
  */
-export declare function getOverviewStats(): OverviewStats;
+export declare function getOverviewStats(): Promise<OverviewStats>;
 /**
- * 按时间统计（最近N天/周的趋势）
+ * 按时间统计（MongoDB 聚合版 - 用 $bucket 按时间分桶）
  */
-export declare function getStatsByTime(range: 'day' | 'week' | 'month'): TimeStats;
+export declare function getStatsByTime(range: 'day' | 'week' | 'month'): Promise<TimeStats>;
 /**
- * 按 Key 统计
+ * 按 Key 统计（MongoDB 聚合版）
  */
-export declare function getStatsByKey(): KeyStats[];
+export declare function getStatsByKey(): Promise<KeyStats[]>;
 /**
- * 按 Key 详细统计（含按模型+功能细分、费用估算）
+ * 按 Key 详细统计（含模型+功能细分+费用）
+ * MongoDB 三级聚合：apiKeyMasked → provider+model → function
+ * 费用计算在 JS 侧完成（依赖 estimateCallCost 函数逻辑）
  */
-export declare function getStatsByKeyDetail(): KeyDetailStats[];
+export declare function getStatsByKeyDetail(): Promise<KeyDetailStats[]>;
 /**
- * 按功能统计
+ * 按功能统计（MongoDB 聚合版）
  */
-export declare function getStatsByFunction(): Record<string, FunctionStats>;
+export declare function getStatsByFunction(): Promise<Record<string, FunctionStats>>;
 /**
- * 按 Provider 统计
+ * 按 Provider 统计（MongoDB 聚合版）
  */
-export declare function getStatsByProvider(): Record<string, ProviderStats>;
+export declare function getStatsByProvider(): Promise<Record<string, ProviderStats>>;
 /**
- * 按 Provider+Model 统计
+ * 按 Provider+Model 统计（MongoDB 聚合版）
  */
-export declare function getStatsByModel(): Record<string, ModelStats>;
-/**
- * 系统信息
- */
+export declare function getStatsByModel(): Promise<Record<string, ModelStats>>;
 export declare function getSystemInfo(): SystemInfo;

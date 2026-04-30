@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { Fragment, useEffect, useState, useCallback } from 'react';
 import { api, RequestLog, QueryLogsResult, AIApiCall } from '../services/api';
 
 const FUNCTIONS = ['script', 'storyboard', 'image', 'video'];
@@ -230,9 +230,8 @@ export function Logs() {
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {logs.map((log) => (
-                  <>
+                  <Fragment key={log.id}>
                     <tr
-                      key={log.id}
                       className="hover:bg-gray-50 cursor-pointer"
                       onClick={() => handleToggleExpand(log.id)}
                     >
@@ -396,7 +395,7 @@ export function Logs() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 ))}
                 {logs.length === 0 && (
                   <tr>

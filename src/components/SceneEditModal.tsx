@@ -3,6 +3,7 @@ import type { Scene } from '../types';
 import { uploadImage, localPathToSrc, saveUrlImage, localImageToBase64, isLocalFilePath, uploadMultipleImages, getImageDimensions, checkImageMeetsMinPixels, exportImageFile } from '../services/fileService';
 import { generateImage, generateImageWithVolcEngine, ImageGenParams, buildScenePrompt } from '../services/aiService';
 import { getApiConfig, getImageHistory, saveImageHistory, deleteImageHistory, ImageHistory, addGeneratedImageHistory } from '../services/database';
+import { getAspectRatioStyle } from '../utils/aspectRatioUtils';
 import { getEnabledModels, ModelInfo, getModelDisplayText } from '../utils/modelConfig';
 import { useApp } from '../context/AppContext';
 import type { ApiConfig } from '../types';
@@ -648,7 +649,7 @@ const SceneEditModal: React.FC<SceneEditModalProps> = ({ scene, onClose, onSave 
               )}
             </div>
 
-            <div className="bg-gray-100 rounded-lg overflow-hidden relative aspect-video flex items-center justify-center">
+            <div className="bg-gray-100 rounded-lg overflow-hidden relative flex items-center justify-center" style={getAspectRatioStyle(selectedAspectRatio)}>
               {imageSrc ? (
                 <>
                   <img src={imageSrc} alt={name} className="max-w-full max-h-full object-contain" />
@@ -730,7 +731,7 @@ const SceneEditModal: React.FC<SceneEditModalProps> = ({ scene, onClose, onSave 
                           }
                         }}
                       >
-                        <div className="aspect-video bg-gray-100 flex items-center justify-center">
+                        <div className="bg-gray-100 flex items-center justify-center" style={getAspectRatioStyle(selectedAspectRatio)}>
                           {imgSrc && (
                             <img 
                               src={imgSrc} 

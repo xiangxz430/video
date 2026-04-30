@@ -94,7 +94,7 @@ const SceneCollection: React.FC = () => {
                   <img
                     src={localPathToSrc(scenes.find(s => s.name === scene)?.imageUrl) || ''}
                     alt={scene}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-contain"
                   />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-gray-400">

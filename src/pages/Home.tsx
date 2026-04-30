@@ -5,6 +5,7 @@ import { generateImage, generateVideo } from '../services/serverApiClient';
 import { getApiConfig, getAllImageHistoryByDate, addGeneratedImageHistory, deleteGeneratedImageHistory, type GeneratedImageHistory, type ImageHistoryByDate, addHomeVideoHistory, getHomeVideoHistoryByDate, deleteHomeVideoHistory, importLocalVideosToHistory, type HomeVideoHistory, type VideoHistoryByDate } from '../services/database';
 import { uploadImage, saveUrlImage, localImageToBase64, isLocalFilePath, localPathToSrc, exportImageFile, downloadVideo, localVideoPathToSrc, scanLocalVideos } from '../services/fileService';
 import { useApp } from '../context/AppContext';
+import { getAspectRatioStyle } from '../utils/aspectRatioUtils';
 import { getEnabledModels, ModelInfo, getModelDisplayText } from '../utils/modelConfig';
 
 // 支持的图片生成模型 - 从数据库动态加载
@@ -891,8 +892,8 @@ const Home: React.FC = () => {
                     首帧图片 <span className="text-red-500">*</span>
                   </label>
                   {firstFrameImage ? (
-                    <div className="relative aspect-video bg-gray-100 rounded-xl overflow-hidden">
-                      <img src={isLocalFilePath(firstFrameImage) ? (localPathToSrc(firstFrameImage) || undefined) : firstFrameImage} className="w-full h-full object-cover" />
+                    <div className="relative bg-gray-100 rounded-xl overflow-hidden" style={getAspectRatioStyle(selectedVideoAspectRatio)}>
+                      <img src={isLocalFilePath(firstFrameImage) ? (localPathToSrc(firstFrameImage) || undefined) : firstFrameImage} className="w-full h-full object-contain" />
                       <button
                         onClick={() => setFirstFrameImage(null)}
                         className="absolute top-2 right-2 w-8 h-8 bg-red-500 text-white rounded-full"
@@ -904,7 +905,7 @@ const Home: React.FC = () => {
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         onClick={() => handleUploadImage(setFirstFrameImage)}
-                        className="w-full aspect-video border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center text-gray-400 hover:border-purple-400 hover:text-purple-500"
+                        className="w-full border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center text-gray-400 hover:border-purple-400 hover:text-purple-500" style={getAspectRatioStyle(selectedVideoAspectRatio)}
                       >
                         <svg className="w-8 h-8 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -917,7 +918,7 @@ const Home: React.FC = () => {
                           loadImageHistory();
                           setShowImageHistory(true);
                         }}
-                        className="w-full aspect-video border-2 border-dashed border-blue-300 rounded-xl flex flex-col items-center justify-center text-blue-400 hover:border-blue-400 hover:text-blue-500"
+                        className="w-full border-2 border-dashed border-blue-300 rounded-xl flex flex-col items-center justify-center text-blue-400 hover:border-blue-400 hover:text-blue-500" style={getAspectRatioStyle(selectedVideoAspectRatio)}
                       >
                         <svg className="w-8 h-8 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -936,8 +937,8 @@ const Home: React.FC = () => {
                     尾帧图片 <span className="text-red-500">*</span>
                   </label>
                   {lastFrameImage ? (
-                    <div className="relative aspect-video bg-gray-100 rounded-xl overflow-hidden">
-                      <img src={isLocalFilePath(lastFrameImage) ? (localPathToSrc(lastFrameImage) || undefined) : lastFrameImage} className="w-full h-full object-cover" />
+                    <div className="relative bg-gray-100 rounded-xl overflow-hidden" style={getAspectRatioStyle(selectedVideoAspectRatio)}>
+                      <img src={isLocalFilePath(lastFrameImage) ? (localPathToSrc(lastFrameImage) || undefined) : lastFrameImage} className="w-full h-full object-contain" />
                       <button
                         onClick={() => setLastFrameImage(null)}
                         className="absolute top-2 right-2 w-8 h-8 bg-red-500 text-white rounded-full"
@@ -949,7 +950,7 @@ const Home: React.FC = () => {
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         onClick={() => handleUploadImage(setLastFrameImage)}
-                        className="w-full aspect-video border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center text-gray-400 hover:border-purple-400 hover:text-purple-500"
+                        className="w-full border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center text-gray-400 hover:border-purple-400 hover:text-purple-500" style={getAspectRatioStyle(selectedVideoAspectRatio)}
                       >
                         <svg className="w-8 h-8 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -962,7 +963,7 @@ const Home: React.FC = () => {
                           loadImageHistory();
                           setShowImageHistory(true);
                         }}
-                        className="w-full aspect-video border-2 border-dashed border-blue-300 rounded-xl flex flex-col items-center justify-center text-blue-400 hover:border-blue-400 hover:text-blue-500"
+                        className="w-full border-2 border-dashed border-blue-300 rounded-xl flex flex-col items-center justify-center text-blue-400 hover:border-blue-400 hover:text-blue-500" style={getAspectRatioStyle(selectedVideoAspectRatio)}
                       >
                         <svg className="w-8 h-8 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -983,8 +984,8 @@ const Home: React.FC = () => {
                   <div className="grid grid-cols-4 gap-3">
                     {videoRefImages.map((img, idx) => (
                       <div key={idx} className="relative">
-                        <div className="aspect-video bg-gray-100 rounded-xl overflow-hidden">
-                          <img src={isLocalFilePath(img) ? (localPathToSrc(img) || undefined) : img} className="w-full h-full object-cover" />
+                        <div className="bg-gray-100 rounded-xl overflow-hidden" style={getAspectRatioStyle(selectedVideoAspectRatio)}>
+                          <img src={isLocalFilePath(img) ? (localPathToSrc(img) || undefined) : img} className="w-full h-full object-contain" />
                         </div>
                         <div className="absolute bottom-1 left-1 px-2 py-0.5 bg-black/60 text-white text-xs rounded">
                           图{idx + 1}
@@ -1001,7 +1002,7 @@ const Home: React.FC = () => {
                       <>
                         <button
                           onClick={() => handleUploadMultiple(setVideoRefImages, 4)}
-                          className="aspect-video border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center text-gray-400 hover:border-purple-400"
+                          className="border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center text-gray-400 hover:border-purple-400" style={getAspectRatioStyle(selectedVideoAspectRatio)}
                         >
                           <svg className="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -1014,7 +1015,7 @@ const Home: React.FC = () => {
                             loadImageHistory();
                             setShowImageHistory(true);
                           }}
-                          className="aspect-video border-2 border-dashed border-blue-300 rounded-xl flex flex-col items-center justify-center text-blue-400 hover:border-blue-400"
+                          className="border-2 border-dashed border-blue-300 rounded-xl flex flex-col items-center justify-center text-blue-400 hover:border-blue-400" style={getAspectRatioStyle(selectedVideoAspectRatio)}
                         >
                           <svg className="w-6 h-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1138,7 +1139,7 @@ const Home: React.FC = () => {
                         <div className="grid grid-cols-2 gap-3">
                           {group.videos.map((video) => (
                             <div key={video.id} className="bg-white rounded-lg p-3 hover:shadow transition">
-                              <div className="relative aspect-video bg-black rounded overflow-hidden mb-2">
+                              <div className="relative bg-black rounded overflow-hidden mb-2" style={getAspectRatioStyle(selectedVideoAspectRatio)}>
                                 <video 
                                   src={video.localPath ? localVideoPathToSrc(video.localPath) || undefined : video.remoteUrl || undefined}
                                   controls

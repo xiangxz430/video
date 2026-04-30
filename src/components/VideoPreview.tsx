@@ -2,13 +2,15 @@ import React, { useState, useRef, useEffect } from 'react';
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile, readFile } from '@tauri-apps/plugin-fs';
+import { getAspectRatioStyle } from '../utils/aspectRatioUtils';
 
 interface VideoPreviewProps {
   segment: any;
   selectedShotIndex?: number;
+  aspectRatio?: string;
 }
 
-const VideoPreview: React.FC<VideoPreviewProps> = ({ segment, selectedShotIndex }) => {
+const VideoPreview: React.FC<VideoPreviewProps> = ({ segment, selectedShotIndex, aspectRatio }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -310,7 +312,7 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({ segment, selectedShotIndex 
         ) : isGenerated ? (
           // 已生成 - 显示视频播放器
           <div className="space-y-4">
-            <div className="relative bg-black rounded-lg overflow-hidden aspect-video">
+            <div className="relative bg-black rounded-lg overflow-hidden" style={getAspectRatioStyle(aspectRatio || currentShot?.aspectRatio)}>
               <video
                 key={videoUrl}
                 ref={videoRef}

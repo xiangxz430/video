@@ -11,6 +11,7 @@ import { saveImageHistory, getImageHistory, ImageHistory, getScript, getGenerate
 import { getEnabledModels, ModelInfo, findApiConfigForModel, getBestConfig } from '../utils/modelConfig';
 import { getImageConfigForModel } from '../utils/imageConfigUtils';
 import { parseSegmentContent } from '../utils/segmentUtils';
+import { getAspectRatioStyle } from '../utils/aspectRatioUtils';
 import { DEFAULT_SHOT_DURATION } from '../constants';
 import type { ApiConfig } from '../types';
 
@@ -3053,7 +3054,7 @@ const EpisodeEdit: React.FC = () => {
                       <img 
                         src={localPathToSrc(character.imageUrl) || ''} 
                         alt={character.name}
-                        className="w-full aspect-video object-cover"
+                        className="w-full object-contain bg-slate-100"
                       />
                       <div className="p-2 text-xs text-center truncate">{character.name}</div>
                     </div>
@@ -3076,7 +3077,7 @@ const EpisodeEdit: React.FC = () => {
                       <img 
                         src={localPathToSrc(scene.imageUrl) || ''} 
                         alt={scene.name}
-                        className="w-full aspect-video object-cover"
+                        className="w-full object-contain bg-slate-100"
                       />
                       <div className="p-2 text-xs text-center truncate">{scene.name}</div>
                     </div>
@@ -3099,7 +3100,7 @@ const EpisodeEdit: React.FC = () => {
                       <img 
                         src={localPathToSrc(item.localPath) || ''}
                         alt={item.prompt || '历史图片'}
-                        className="w-full aspect-video object-cover"
+                        className="w-full object-contain bg-slate-100"
                       />
                       <div className="p-2 text-xs text-center truncate">
                         {item.prompt || '无提示词'}
@@ -3225,11 +3226,11 @@ const EpisodeEdit: React.FC = () => {
                   <div className="grid grid-cols-3 gap-4">
                     {refPreviewModal.items.map((item, idx) => (
                       <div key={idx} className="flex flex-col gap-1">
-                        <div className="relative bg-slate-100 rounded-lg overflow-hidden aspect-video">
+                        <div className="relative bg-slate-100 rounded-lg overflow-hidden" style={getAspectRatioStyle(videoAspectRatio)}>
                           <img
                             src={localPathToSrc(item.path) || ''}
                             alt={item.name}
-                            className="w-full h-full object-cover"
+                            className="w-full h-full object-contain"
                             onError={(e) => {
                               (e.target as HTMLImageElement).style.display = 'none';
                             }}

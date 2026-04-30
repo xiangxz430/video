@@ -3,6 +3,7 @@ import ScriptEditModal from './ScriptEditModal';
 import { localPathToSrc, exportImageFile, uploadImage } from '../services/fileService';
 import { useApp } from '../context/AppContext';
 import { getEnabledModels, ModelInfo, getModelDisplayText } from '../utils/modelConfig';
+import { getAspectRatioStyle } from '../utils/aspectRatioUtils';
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 
 // 视频生成模式类型
@@ -928,7 +929,7 @@ const ScriptEditor: React.FC<ScriptEditorProps> = ({
             {/* 视频播放区域 */}
             {hasVideo && (
               <div className="mb-4">
-                <div className="relative bg-slate-900 rounded-lg overflow-hidden aspect-video">
+                <div className="relative bg-slate-900 rounded-lg overflow-hidden" style={getAspectRatioStyle(shot.aspectRatio || videoAspectRatio)}>
                   <video
                     src={(() => {
                       // 优先使用本地路径
@@ -1234,12 +1235,13 @@ const ScriptEditor: React.FC<ScriptEditorProps> = ({
                     <div className={shot.videoGenMode === 'first-last-frame' ? 'flex-1' : 'w-full'}>
                       <p className="text-xs text-slate-500 mb-1">首帧图片</p>
                       {generatingFrameShotIndex === index && generatingFrameType === 'first' ? (
-                        <div className="aspect-video bg-slate-200 rounded-lg flex items-center justify-center">
+                        <div className="bg-slate-200 rounded-lg flex items-center justify-center" style={getAspectRatioStyle(shot.aspectRatio || videoAspectRatio)}>
                           <div className="animate-spin rounded-full h-10 w-10 border-4 border-indigo-500 border-t-transparent"></div>
                         </div>
                       ) : hasFirstFrame ? (
                         <div 
-                          className="relative aspect-video bg-slate-200 rounded-lg overflow-hidden cursor-pointer group"
+                          className="relative bg-slate-200 rounded-lg overflow-hidden cursor-pointer group"
+                          style={getAspectRatioStyle(shot.aspectRatio || videoAspectRatio)}
                           onClick={() => openImagePreview(
                             localPathToSrc(shot.firstFrameLocalPath) || shot.firstFrameImage || '',
                             shot.firstFrameLocalPath || null,
@@ -1260,7 +1262,7 @@ const ScriptEditor: React.FC<ScriptEditorProps> = ({
                           </div>
                         </div>
                       ) : (
-                        <div className="aspect-video bg-slate-200 rounded-lg flex flex-col items-center justify-center space-y-2">
+                        <div className="bg-slate-200 rounded-lg flex flex-col items-center justify-center space-y-2" style={getAspectRatioStyle(shot.aspectRatio || videoAspectRatio)}>
                           <span className="text-xs text-slate-400">未生成</span>
                           <div className="flex space-x-2">
                             {onSelectFirstFrame && (
@@ -1295,12 +1297,13 @@ const ScriptEditor: React.FC<ScriptEditorProps> = ({
                       <div className="flex-1">
                         <p className="text-xs text-slate-500 mb-1">尾帧图片</p>
                         {generatingFrameShotIndex === index && generatingFrameType === 'last' ? (
-                          <div className="aspect-video bg-slate-200 rounded-lg flex items-center justify-center">
+                          <div className="bg-slate-200 rounded-lg flex items-center justify-center" style={getAspectRatioStyle(shot.aspectRatio || videoAspectRatio)}>
                             <div className="animate-spin rounded-full h-10 w-10 border-4 border-indigo-500 border-t-transparent"></div>
                           </div>
                         ) : hasLastFrame ? (
                           <div 
-                            className="relative aspect-video bg-slate-200 rounded-lg overflow-hidden cursor-pointer group"
+                            className="relative bg-slate-200 rounded-lg overflow-hidden cursor-pointer group"
+                            style={getAspectRatioStyle(shot.aspectRatio || videoAspectRatio)}
                             onClick={() => openImagePreview(
                               localPathToSrc(shot.lastFrameLocalPath) || shot.lastFrameImage || '',
                               shot.lastFrameLocalPath || null,
@@ -1321,7 +1324,7 @@ const ScriptEditor: React.FC<ScriptEditorProps> = ({
                             </div>
                           </div>
                         ) : (
-                          <div className="aspect-video bg-slate-200 rounded-lg flex flex-col items-center justify-center space-y-2">
+                          <div className="bg-slate-200 rounded-lg flex flex-col items-center justify-center space-y-2" style={getAspectRatioStyle(shot.aspectRatio || videoAspectRatio)}>
                             <span className="text-xs text-slate-400">未生成</span>
                             <div className="flex space-x-2">
                               {onSelectLastFrame && (
@@ -1419,7 +1422,7 @@ const ScriptEditor: React.FC<ScriptEditorProps> = ({
                   {shot.referenceImages && shot.referenceImages.length > 0 && (
                     <div className="grid grid-cols-4 gap-2 mb-2">
                       {shot.referenceImages.map((img: string, imgIdx: number) => (
-                        <div key={imgIdx} className="relative aspect-video bg-slate-200 rounded-lg overflow-hidden">
+                        <div key={imgIdx} className="relative bg-slate-200 rounded-lg overflow-hidden" style={getAspectRatioStyle(shot.aspectRatio || videoAspectRatio)}>
                           <img src={localPathToSrc(img) || ''} alt={`参考图${imgIdx + 1}`} className="w-full h-full object-contain" />
                           <button
                             onClick={(e) => {
@@ -1638,7 +1641,7 @@ const ScriptEditor: React.FC<ScriptEditorProps> = ({
                           <img 
                             src={localPathToSrc(img.localPath) || ''}
                             alt={img.prompt || '历史图片'}
-                            className="w-full aspect-video object-cover"
+                            className="w-full object-contain bg-slate-100"
                           />
                           <div className="p-2 text-xs text-center truncate">
                             {img.prompt ? safeValue(img.prompt) : '无提示词'}

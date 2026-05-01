@@ -20,8 +20,27 @@ import { config } from './config/index.js';
 import { initializeFromEnv } from './services/apiKeyService.js';
 import { connectMongo, closeMongo } from './services/mongoService.js';
 const app = express();
-app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' }, crossOriginOpenerPolicy: false }));
-app.use(cors());
+app.use(helmet({
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    crossOriginOpenerPolicy: false,
+    crossOriginEmbedderPolicy: false
+}));
+app.use(cors({
+    origin: true, // 允许所有来源（包括 tauri://localhost、null 等自定义 scheme）
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Admin-Key'],
+    preflightContinue: false,
+    optionsSuccessStatus: 204
+}));
+// 兜底：确保所有 OPTIONS 请求都能正确响应，不被后续 auth 中间件拦截
+app.options('*', cors({
+    origin: true,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Admin-Key']
+}));
 app.use(express.json({ limit: '50mb' }));
 // 初始化：从环境变量导入默认 API Key
 initializeFromEnv(config.apiKey);

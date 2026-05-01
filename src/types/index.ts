@@ -144,6 +144,10 @@ export interface Shot {
   videoGenMode?: 'text-to-video' | 'image-to-video' | 'first-last-frame';
   referenceImages?: string[];
   referenceImagePrompt?: string;
+  seed?: number;                          // 确定性生成种子
+  size?: string;                          // 精确像素尺寸 "WIDTHxHEIGHT"
+  callbackUrl?: string;                   // Webhook 回调 URL
+  providerOptions?: Record<string, any>;  // Provider 特定透传参数
 }
 
 // 分镜场景

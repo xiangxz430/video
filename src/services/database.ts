@@ -302,6 +302,9 @@ async function createTables(): Promise<void> {
   
   // 迁移：插入 DeepSeek V4 Pro 配置（如不存在）
   await migrateDeepSeekV4Pro();
+  
+  // 迁移：修复 Seedance OpenRouter 条目 → 火山引擎（Seedance 必须直连火山引擎）
+  await migrateSeedanceOpenRouterToVolc();
 }
 
 // 初始化默认 API 配置
@@ -315,7 +318,8 @@ async function initDefaultApiConfigs(): Promise<void> {
     { name: 'scriptGeneration', provider: 'volcengine', apiKey: 'f0ba8598-e4cf-4c30-94ea-a58e91f8d08f', model: 'doubao-1-5-pro-32k-250115', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
     { name: 'imageGeneration', provider: 'volcengine', apiKey: 'f0ba8598-e4cf-4c30-94ea-a58e91f8d08f', model: 'doubao-seedream-5-0-260128', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
     { name: 'videoGeneration', provider: 'volcengine', apiKey: 'b64aa222-6148-476f-9297-2fafad8cd05b', model: 'doubao-seedance-1-5-pro-251215', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
-    { name: 'videoGeneration_seedance-2-0-fast', provider: 'volcengine', apiKey: 'b64aa222-6148-476f-9297-2fafad8cd05b', model: 'doubao-seedance-2.0-fast', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
+    { name: 'videoGeneration_seedance-2-0', provider: 'volcengine', apiKey: 'b64aa222-6148-476f-9297-2fafad8cd05b', model: 'doubao-seedance-2-0-260128', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
+    { name: 'videoGeneration_seedance-2-0-fast', provider: 'volcengine', apiKey: 'b64aa222-6148-476f-9297-2fafad8cd05b', model: 'doubao-seedance-2-0-fast-260128', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
     // Grsai - 图片生成
     { name: 'grsai_imageGeneration_nano-banana-fast', provider: 'grsai', apiKey: 'sk-31428f6c42e242a7b0ac10581c4ed017', model: 'nano-banana-fast', baseUrl: 'https://grsai.dakka.com.cn' },
     { name: 'grsai_imageGeneration_nano-banana', provider: 'grsai', apiKey: 'sk-31428f6c42e242a7b0ac10581c4ed017', model: 'nano-banana', baseUrl: 'https://grsai.dakka.com.cn' },
@@ -338,8 +342,8 @@ async function initDefaultApiConfigs(): Promise<void> {
     { name: 'deepseek_scriptGeneration_deepseek-reasoner', provider: 'deepseek', apiKey: 'sk-2b253d4e956642d8a100d94a4db56b11', model: 'deepseek-reasoner', baseUrl: 'https://api.deepseek.com/v1' },
     // IdeaLab
     { name: 'idealab_scriptGeneration_qwen_max', provider: 'idealab', apiKey: '', model: 'qwen_max', baseUrl: 'https://idealab.alibaba-inc.com/api/v1' },
-    // OpenRouter - 视频生成
-    { name: 'videoGeneration_openrouter', provider: 'openrouter', apiKey: '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', model: 'bytedance/seedance-1-5-pro', baseUrl: 'https://openrouter.ai/api/v1' },
+    // Seedance 模型必须直连火山引擎，不使用 OpenRouter 中转
+    { name: 'videoGeneration_openrouter', provider: 'volcengine', apiKey: 'b64aa222-6148-476f-9297-2fafad8cd05b', model: 'doubao-seedance-1-5-pro-251215', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
     // OpenRouter - 图片生成 (Flux)
     { name: 'imageGeneration_openrouter_black-forest-labs/flux.2-pro', provider: 'openrouter', apiKey: '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', model: 'black-forest-labs/flux.2-pro', baseUrl: 'https://openrouter.ai/api/v1' },
     { name: 'imageGeneration_openrouter_black-forest-labs/flux.2-flex', provider: 'openrouter', apiKey: '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', model: 'black-forest-labs/flux.2-flex', baseUrl: 'https://openrouter.ai/api/v1' },
@@ -355,10 +359,10 @@ async function initDefaultApiConfigs(): Promise<void> {
     // OpenRouter - 视频生成 (Alpha)
    { name: 'videoGeneration_openrouter_kwaivgi/kling-v3.0-pro', provider: 'openrouter', apiKey: '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', model: 'kwaivgi/kling-v3.0-pro', baseUrl: 'https://openrouter.ai/api/v1' },
     { name: 'videoGeneration_openrouter_minimax/hailuo-2.3', provider: 'openrouter', apiKey: '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', model: 'minimax/hailuo-2.3', baseUrl: 'https://openrouter.ai/api/v1' },
-    { name: 'videoGeneration_openrouter_bytedance/seedance-2.0', provider: 'openrouter', apiKey: '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', model: 'bytedance/seedance-2.0', baseUrl: 'https://openrouter.ai/api/v1' },
-    { name: 'videoGeneration_openrouter_bytedance/seedance-2.0-fast', provider: 'openrouter', apiKey: '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', model: 'bytedance/seedance-2.0-fast', baseUrl: 'https://openrouter.ai/api/v1' },
+    { name: 'videoGeneration_openrouter_bytedance/seedance-2.0', provider: 'volcengine', apiKey: 'b64aa222-6148-476f-9297-2fafad8cd05b', model: 'doubao-seedance-2-0-260128', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
+    { name: 'videoGeneration_openrouter_bytedance/seedance-2.0-fast', provider: 'volcengine', apiKey: 'b64aa222-6148-476f-9297-2fafad8cd05b', model: 'doubao-seedance-2-0-fast-260128', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
     { name: 'videoGeneration_openrouter_alibaba/wan-2.7', provider: 'openrouter', apiKey: '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', model: 'alibaba/wan-2.7', baseUrl: 'https://openrouter.ai/api/v1' },
-    { name: 'videoGeneration_openrouter_kwaivgi/kling-v3.0-standard', provider: 'openrouter', apiKey: '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', model: 'kwaivgi/kling-v3.0-standard', baseUrl: 'https://openrouter.ai/api/v1' },
+    { name: 'videoGeneration_openrouter_kwaivgi/kling-v3.0-std', provider: 'openrouter', apiKey: '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', model: 'kwaivgi/kling-v3.0-std', baseUrl: 'https://openrouter.ai/api/v1' },
     { name: 'videoGeneration_openrouter_kwaivgi/kling-video-o1', provider: 'openrouter', apiKey: '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', model: 'kwaivgi/kling-video-o1', baseUrl: 'https://openrouter.ai/api/v1' },
     { name: 'videoGeneration_openrouter_alibaba/wan-2.6', provider: 'openrouter', apiKey: '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', model: 'alibaba/wan-2.6', baseUrl: 'https://openrouter.ai/api/v1' },
     // Token Plan (百炼包月) - 文本生成
@@ -372,7 +376,7 @@ async function initDefaultApiConfigs(): Promise<void> {
     { name: 'tokenplan_imageGeneration_wan2.7-image', provider: 'tokenplan', apiKey: 'sk-sp-djI.k3cHkXMX3CYPOkwd2h6KE53xu9f_CbptOQT_jiSRRvP-nf3-rOyewLdgaVj9BcKAjPIQWQc43iX41ICrtsWSBoyFcLcavmGJvdryYmPpTIuaooimi0T6QWSkVtP_xTtR5kaUA8BliYNLkZuvPxO3GgAmHrEvRcFp7SItvt1wZ0sCTFWjhWg9SCMCe86MU_9e.MEYCIQCW09khQbU2YN7T9C3R84wqPSQDUbavfBIOYB54ihhYJgIhAJMbkUYC6jXToF3lkxc99pb2C4Tuaeb279qO2KjPisXD', model: 'wan2.7-image', baseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1' },
     { name: 'tokenplan_imageGeneration_wan2.7-image-pro', provider: 'tokenplan', apiKey: 'sk-sp-djI.k3cHkXMX3CYPOkwd2h6KE53xu9f_CbptOQT_jiSRRvP-nf3-rOyewLdgaVj9BcKAjPIQWQc43iX41ICrtsWSBoyFcLcavmGJvdryYmPpTIuaooimi0T6QWSkVtP_xTtR5kaUA8BliYNLkZuvPxO3GgAmHrEvRcFp7SItvt1wZ0sCTFWjhWg9SCMCe86MU_9e.MEYCIQCW09khQbU2YN7T9C3R84wqPSQDUbavfBIOYB54ihhYJgIhAJMbkUYC6jXToF3lkxc99pb2C4Tuaeb279qO2KjPisXD', model: 'wan2.7-image-pro', baseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1' },
     // 服务端配置
-    { name: 'server_url', provider: 'server', apiKey: 'http://localhost:3000', model: 'default', baseUrl: null },
+    { name: 'server_url', provider: 'server', apiKey: 'http://8.147.65.80:3000', model: 'default', baseUrl: null },
     { name: 'server_api_key', provider: 'server', apiKey: '', model: 'default', baseUrl: null },
   ];
   
@@ -451,6 +455,37 @@ async function migrateDeepSeekV4Pro(): Promise<void> {
     }
   } catch (e) {
     console.error('Failed to migrate DeepSeek V4 Pro:', e);
+  }
+}
+
+// 迁移：修复 Seedance OpenRouter 条目 → 火山引擎（Seedance 必须直连火山引擎）
+async function migrateSeedanceOpenRouterToVolc(): Promise<void> {
+  if (!db) return;
+  
+  // 需要修复的 OpenRouter seedance 配置：name → 火山引擎模型名
+  const fixEntries: { name: string; volcModel: string }[] = [
+    { name: 'videoGeneration_openrouter', volcModel: 'doubao-seedance-1-5-pro-251215' },
+    { name: 'videoGeneration_openrouter_bytedance/seedance-2.0', volcModel: 'doubao-seedance-2-0-260128' },
+    { name: 'videoGeneration_openrouter_bytedance/seedance-2.0-fast', volcModel: 'doubao-seedance-2-0-fast-260128' },
+  ];
+  
+  for (const entry of fixEntries) {
+    try {
+      const rows = await db.select<{ provider: string }[]>(
+        `SELECT provider FROM api_configs WHERE name = ?`,
+        [entry.name]
+      );
+      
+      if (rows.length > 0 && rows[0].provider === 'openrouter') {
+        await db.execute(
+          `UPDATE api_configs SET provider = 'volcengine', model = ?, api_key = 'b64aa222-6148-476f-9297-2fafad8cd05b', base_url = 'https://ark.cn-beijing.volces.com/api/v3', updated_at = CURRENT_TIMESTAMP WHERE name = ?`,
+          [entry.volcModel, entry.name]
+        );
+        console.log(`Migrated: ${entry.name} provider=openrouter → volcengine, model → ${entry.volcModel}`);
+      }
+    } catch (e) {
+      console.error(`Failed to migrate ${entry.name}:`, e);
+    }
   }
 }
 

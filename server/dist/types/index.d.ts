@@ -97,6 +97,11 @@ export interface VideoGenParams {
     aspectRatio?: string;
     duration?: number;
     enableAudio?: boolean;
+    resolution?: string;
+    seed?: number;
+    size?: string;
+    callbackUrl?: string;
+    providerOptions?: Record<string, any>;
 }
 export interface VideoGenResult {
     taskId: string;

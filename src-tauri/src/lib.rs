@@ -1,7 +1,12 @@
 use serde::{Deserialize, Serialize};
-use std::net::ToSocketAddrs;
+use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Write};
+use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::process::Command;
+use std::time::Duration;
 use tauri_plugin_shell::ShellExt;
+use tauri::Emitter;
+use futures_util::StreamExt;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DownloadResult {
@@ -258,6 +263,202 @@ async fn merge_videos(video_urls: Vec<String>, output_path: String) -> Result<Me
     }
 }
 
+/// 使用 reqwest 的 no_proxy 客户端发送通用 HTTP 请求（彻底绕过系统代理）
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HttpResponse {
+    pub status: u16,
+    pub body: String,
+}
+
+#[tauri::command]
+async fn http_request(url: String, method: String, headers: HashMap<String, String>, body: Option<String>) -> Result<HttpResponse, String> {
+    println!("[Rust] http_request: {} {}", method, url);
+
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| format!("构建 HTTP 客户端失败: {}", e))?;
+
+    let mut req = match method.as_str() {
+        "GET" => client.get(&url),
+        "POST" => client.post(&url),
+        "PUT" => client.put(&url),
+        "DELETE" => client.delete(&url),
+        _ => client.get(&url),
+    };
+
+    for (key, value) in &headers {
+        req = req.header(key.as_str(), value.as_str());
+    }
+
+    if let Some(body) = body {
+        req = req.body(body);
+    }
+
+    let response = req.send().await.map_err(|e| format!("请求失败: {}", e))?;
+    let status = response.status().as_u16();
+    let resp_body = response.text().await.map_err(|e| format!("读取响应失败: {}", e))?;
+
+    println!("[Rust] http_request 完成: status={}", status);
+    Ok(HttpResponse { status, body: resp_body })
+}
+
+/// 使用 reqwest 的 no_proxy 客户端发送 SSE 流式请求（彻底绕过系统代理）
+#[tauri::command]
+async fn http_sse_request(
+    app: tauri::AppHandle,
+    request_id: String,
+    url: String,
+    headers: HashMap<String, String>,
+    body: String,
+) -> Result<(), String> {
+    println!("[Rust] http_sse_request: {}", url);
+
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| format!("构建 HTTP 客户端失败: {}", e))?;
+
+    let mut req = client.post(&url);
+    for (key, value) in &headers {
+        req = req.header(key.as_str(), value.as_str());
+    }
+    req = req.body(body);
+
+    let response = req.send().await.map_err(|e| format!("请求失败: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status().as_u16();
+        let text = response.text().await.unwrap_or_default();
+        let _ = app.emit(&format!("sse-error-{}", request_id), &text);
+        return Err(format!("服务端错误 {}: {}", status, text));
+    }
+
+    // 流式读取响应
+    let mut stream = response.bytes_stream();
+
+    while let Some(chunk) = stream.next().await {
+        match chunk {
+            Ok(bytes) => {
+                let text = String::from_utf8_lossy(&bytes);
+                let _ = app.emit(&format!("sse-chunk-{}", request_id), text.to_string());
+            }
+            Err(e) => {
+                let _ = app.emit(&format!("sse-error-{}", request_id), e.to_string());
+                return Err(format!("读取流失败: {}", e));
+            }
+        }
+    }
+
+    let _ = app.emit(&format!("sse-done-{}", request_id), "");
+    println!("[Rust] http_sse_request 完成");
+    Ok(())
+}
+
+/// 使用纯标准库 TCP 连接检查服务端健康状态（绕过 reqwest 的代理干扰）
+#[tauri::command]
+async fn check_server_health(url: String) -> Result<serde_json::Value, String> {
+    println!("[Rust] check_server_health: {}", url);
+
+    // 解析 URL，提取 host 和 port
+    let stripped = url.strip_prefix("http://").unwrap_or(&url);
+    let (host, port, path) = if let Some(idx) = stripped.find('/') {
+        let host_port = &stripped[..idx];
+        let path = &stripped[idx..];
+        if let Some(colon) = host_port.rfind(':') {
+            (&host_port[..colon], host_port[colon + 1..].parse::<u16>().unwrap_or(80), path.to_string())
+        } else {
+            (host_port, 80u16, path.to_string())
+        }
+    } else {
+        if let Some(colon) = stripped.rfind(':') {
+            (&stripped[..colon], stripped[colon + 1..].parse::<u16>().unwrap_or(80), "/".to_string())
+        } else {
+            (stripped, 80u16, "/".to_string())
+        }
+    };
+
+    println!("[Rust] TCP 连接: {}:{}", host, port);
+
+    // 解析地址
+    let addr_str = format!("{}:{}", host, port);
+    let addrs: Vec<SocketAddr> = addr_str
+        .to_socket_addrs()
+        .map_err(|e| format!("DNS 解析失败: {}", e))?
+        .collect();
+
+    let addr = addrs.first().ok_or("无可用地址")?;
+    println!("[Rust] 解析地址: {}", addr);
+
+    // 建立原始 TCP 连接（绕过 reqwest 代理层）
+    let mut stream = TcpStream::connect_timeout(addr, Duration::from_secs(10))
+        .map_err(|e| format!("TCP 连接 {} 失败: {}", addr, e))?;
+
+    // 设置读写超时
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .map_err(|e| format!("设置读超时: {}", e))?;
+    stream
+        .set_write_timeout(Some(Duration::from_secs(5)))
+        .map_err(|e| format!("设置写超时: {}", e))?;
+
+    // 发送 HTTP GET 请求
+    let http_req = format!(
+        "GET {} HTTP/1.0\r\nHost: {}\r\nConnection: close\r\n\r\n",
+        path, host
+    );
+    stream
+        .write_all(http_req.as_bytes())
+        .map_err(|e| format!("发送请求失败: {}", e))?;
+    println!("[Rust] HTTP 请求已发送");
+
+    // 读取响应
+    let mut reader = BufReader::new(&mut stream);
+    let mut status_line = String::new();
+    reader
+        .read_line(&mut status_line)
+        .map_err(|e| format!("读取响应失败: {}", e))?;
+    println!("[Rust] 状态行: {}", status_line.trim());
+
+    // 解析状态码
+    let parts: Vec<&str> = status_line.split_whitespace().collect();
+    if parts.len() < 2 {
+        return Ok(serde_json::json!({"ok": false, "error": "无效的 HTTP 响应"}));
+    }
+    let status_code: u16 = parts[1]
+        .parse()
+        .map_err(|_| "无法解析状态码".to_string())?;
+
+    // 跳过头部
+    loop {
+        let mut header_line = String::new();
+        reader
+            .read_line(&mut header_line)
+            .map_err(|e| format!("读取头部失败: {}", e))?;
+        if header_line.trim().is_empty() {
+            break;
+        }
+    }
+
+    // 读取 body
+    let mut body = String::new();
+    reader
+        .read_line(&mut body)
+        .map_err(|e| format!("读取响应体失败: {}", e))?;
+
+    if status_code == 200 {
+        println!("[Rust] 健康检查成功: {}", body.trim());
+        Ok(serde_json::json!({"ok": true, "data": {"status": "ok"}}))
+    } else {
+        Ok(serde_json::json!({
+            "ok": false,
+            "error": format!("服务端返回状态码: {}", status_code)
+        }))
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -276,7 +477,7 @@ pub fn run() {
       }
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![resolve_domain, download_image, open_local_file, check_ffmpeg, merge_videos])
+    .invoke_handler(tauri::generate_handler![resolve_domain, download_image, open_local_file, check_ffmpeg, merge_videos, check_server_health, http_request, http_sse_request])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }

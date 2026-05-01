@@ -194,7 +194,7 @@ const Settings: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
             <p className="mt-1 text-xs text-gray-500">
-              服务端运行的地址和端口，例如：http://localhost:3000
+              服务端运行的地址和端口，例如：http://8.147.65.80:3000
             </p>
           </div>
 
@@ -285,7 +285,7 @@ const Settings: React.FC = () => {
         <h3 className="text-sm font-medium text-blue-900 mb-2">使用说明</h3>
         <ul className="text-sm text-blue-700 space-y-1 list-disc list-inside">
           <li>服务端地址是运行 AI 服务的 Node.js 服务器地址</li>
-          <li>如果服务端在本地运行，地址通常是 http://localhost:3000</li>
+          <li>默认服务端地址为 http://8.147.65.80:3000，如需本地运行可改为 http://localhost:3000</li>
           <li>服务端密钥用于身份验证，如果服务端未配置可留空</li>
           <li>配置将安全地存储在本地数据库中</li>
           <li>所有 AI 调用（剧本生成、图片生成、视频生成等）都将通过此服务端进行</li>

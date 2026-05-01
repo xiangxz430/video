@@ -113,6 +113,11 @@ export interface VideoGenParams {
   aspectRatio?: string;
   duration?: number;
   enableAudio?: boolean;
+  resolution?: string;
+  seed?: number;                          // 确定性生成种子
+  size?: string;                          // 精确像素尺寸 "WIDTHxHEIGHT"，与 resolution+aspect_ratio 互斥
+  callbackUrl?: string;                   // Webhook 回调 URL（必须 HTTPS）
+  providerOptions?: Record<string, any>;  // Provider 特定透传参数
 }
 
 export interface VideoGenResult {

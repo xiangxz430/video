@@ -48,7 +48,9 @@
     "macOS": {
       "frameworks": [],
       "minimumSystemVersion": "10.13",
-      "hardenedRuntime": true
+      "hardenedRuntime": false,
+      "infoPlist": "Info.plist",
+      "entitlements": "entitlements.plist"
     }
   }
 }

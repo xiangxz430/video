@@ -4,6 +4,14 @@ import { createApiConfig } from '../services/apiClients.js';
 
 const router = Router();
 
+// Seedance 模型名映射：OpenRouter ID → 火山引擎模型名
+const SEEDANCE_MODEL_MAP: Record<string, string> = {
+  'bytedance/seedance-1.5-pro': 'doubao-seedance-1-5-pro-251215',
+  'bytedance/seedance-1-5-pro': 'doubao-seedance-1-5-pro-251215',
+  'bytedance/seedance-2.0': 'doubao-seedance-2-0-260128',
+  'bytedance/seedance-2.0-fast': 'doubao-seedance-2-0-fast-260128',
+};
+
 // POST /api/video/generate - SSE 流式生成视频
 router.post('/generate', async (req, res) => {
   // 设置 SSE 响应头
@@ -12,7 +20,7 @@ router.post('/generate', async (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   
   try {
-    const { 
+    let { 
       prompt, 
       provider, 
       model, 
@@ -21,13 +29,27 @@ router.post('/generate', async (req, res) => {
       referenceImages,
       aspectRatio,
       duration,
-      enableAudio
+      enableAudio,
+      seed,
+      size,
+      callbackUrl,
+      providerOptions
     } = req.body;
     
     if (!prompt) {
       res.write(`event: error\ndata: ${JSON.stringify({ message: '缺少提示词' })}\n\n`);
       res.end();
       return;
+    }
+
+    // Seedance 模型必须直连火山引擎，禁止通过 OpenRouter 中转
+    if (model && (model.toLowerCase().includes('seedance'))) {
+      if (!provider || provider.toLowerCase() === 'openrouter') {
+        const mappedModel = SEEDANCE_MODEL_MAP[model] || 'doubao-seedance-1-5-pro-251215';
+        console.log(`[video] Seedance 模型自动路由到火山引擎: ${model} → ${mappedModel}`);
+        provider = 'volcengine';
+        model = mappedModel;
+      }
     }
 
     const config = provider 
@@ -98,7 +120,11 @@ router.post('/generate', async (req, res) => {
         referenceImages,
         aspectRatio,
         duration,
-        enableAudio
+        enableAudio,
+        seed,
+        size,
+        callbackUrl,
+        providerOptions
       }, config, onProgress);
       
       // 发送完成事件

@@ -90,7 +90,7 @@ export function getProviderDisplayName(provider: string): string {
     'openrouter': 'OpenRouter',
     'grsai': 'Grsai',
     'anthropic': 'Anthropic',
-    'dashscope': '通义千问',
+    'dashscope': '百炼(DashScope)',
     'tokenplan': '百炼TokenPlan'
   };
   return providerMap[provider] || provider;

@@ -43,10 +43,12 @@ export async function generateImageWithGrsai(
   const { prompt, model = 'nano-banana-fast', size = '2K', aspectRatio = 'auto', referenceImages, useStream = true, onProgress } = params;
   
   // GPT 模型使用专用端点 /v1/draw/completions，其他模型使用 /v1/draw/nano-banana
-  const isGptModel = model && (model.startsWith('gpt-image') || model.startsWith('GPT-Image'));
+  const modelLower = (model || '').toLowerCase().trim();
+  const isGptModel = modelLower.startsWith('gpt-image') || modelLower.includes('gpt-image');
   const apiEndpoint = isGptModel
     ? `${baseUrl}/v1/draw/completions`
     : `${baseUrl}/v1/draw/nano-banana`;
+  console.log(`[Grsai] 模型匹配: model="${model}", modelLower="${modelLower}", isGptModel=${isGptModel}`);
   
   console.log('Grsai 图片生成请求:', { model, promptLength: prompt.length, size, aspectRatio, useStream, baseUrl, isGptModel, apiEndpoint });
   
@@ -395,35 +397,46 @@ export async function generateImageWithGrsai(
           }
         }
         if (result.status === 'failed') {
+          // 对无意义错误消息添加上下文（与流式模式保持一致）
+          const failMsg = result.failure_reason || result.error || '图片生成失败';
+          const enhancedMsg = (failMsg === 'error' || failMsg === 'Error' || failMsg === 'unknown')
+            ? `Grsai ${model} 模型生成失败 (端点: ${apiEndpoint}, taskId: ${taskId})，请检查模型名称和参数是否正确`
+            : failMsg;
+          console.error('Grsai 轮询图片生成失败:', enhancedMsg, '完整响应:', JSON.stringify(resultData).substring(0, 1000));
           recordAICall({
             provider: 'grsai',
             model,
             endpoint: apiEndpoint,
             requestTime: Date.now() - startTime,
             status: 'failed',
-            errorMessage: result.failure_reason || result.error || '图片生成失败',
+            errorMessage: enhancedMsg,
             pollAttempts: attempt + 1,
             taskId,
             requestBody: sanitizeAICallBody(requestBody),
             responseBody: sanitizeAICallBody({ failure_reason: result.failure_reason, error: result.error }),
           });
-          throw new Error(result.failure_reason || result.error || '图片生成失败');
+          throw new Error(enhancedMsg);
         }
       } else {
         if (resultData.code !== 0) {
+          const errorMsg = resultData.msg || resultData.message || 'apikey error';
+          const enhancedMsg = (errorMsg === 'error' || errorMsg === 'Error' || errorMsg === 'unknown')
+            ? `Grsai ${model} 模型轮询结果失败 (端点: ${apiEndpoint}, taskId: ${taskId})，请检查 API Key 和模型配置`
+            : errorMsg;
+          console.error('Grsai 轮询结果错误:', enhancedMsg, '完整响应:', JSON.stringify(resultData).substring(0, 1000));
           recordAICall({
             provider: 'grsai',
             model,
             endpoint: apiEndpoint,
             requestTime: Date.now() - startTime,
             status: 'failed',
-            errorMessage: resultData.msg || resultData.message || 'apikey error',
+            errorMessage: enhancedMsg,
             pollAttempts: attempt + 1,
             taskId,
             requestBody: sanitizeAICallBody(requestBody),
             responseBody: sanitizeAICallBody({ msg: resultData.msg, code: resultData.code }),
           });
-          throw new Error(resultData.msg || resultData.message || 'apikey error');
+          throw new Error(enhancedMsg);
         }
       }
     }

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { generateImage, submitWanxTask, waitForWanxTask } from '../services/imageGen/index.js';
+import { generateImage, generateWanxImage } from '../services/imageGen/index.js';
 import { createApiConfig } from '../services/apiClients.js';
 const router = Router();
 // 将结构化 JSON 描述转为自然语言
@@ -114,12 +114,11 @@ router.post('/character', async (req, res) => {
             return res.status(400).json({ error: '缺少角色描述' });
         }
         const prompt = buildCharacterPrompt(description, referenceMode);
-        // 角色图片使用通义万相
+        // 角色图片使用 Wan2.7-Image
         const config = provider
             ? createApiConfig(provider, model)
-            : createApiConfig('qwen', 'wanx-v1');
-        const taskId = await submitWanxTask(config, prompt);
-        const imageUrl = await waitForWanxTask(config, taskId);
+            : createApiConfig('dashscope', 'wan2.7-image');
+        const imageUrl = await generateWanxImage(config, { prompt });
         res.json({ imageUrl });
     }
     catch (error) {
@@ -138,12 +137,11 @@ router.post('/scene', async (req, res) => {
             return res.status(400).json({ error: '缺少场景描述' });
         }
         const prompt = buildScenePrompt(description, referenceMode);
-        // 场景图片使用通义万相
+        // 场景图片使用 Wan2.7-Image
         const config = provider
             ? createApiConfig(provider, model)
-            : createApiConfig('qwen', 'wanx-v1');
-        const taskId = await submitWanxTask(config, prompt);
-        const imageUrl = await waitForWanxTask(config, taskId);
+            : createApiConfig('dashscope', 'wan2.7-image');
+        const imageUrl = await generateWanxImage(config, { prompt });
         res.json({ imageUrl });
     }
     catch (error) {

@@ -26,7 +26,14 @@
 import { recordAICall, sanitizeAICallBody } from '../logContext.js';
 export async function generateImageWithGrsai(params, apiKey, baseUrl = 'https://grsai.dakka.com.cn') {
     const { prompt, model = 'nano-banana-fast', size = '2K', aspectRatio = 'auto', referenceImages, useStream = true, onProgress } = params;
-    console.log('Grsai 图片生成请求:', { model, promptLength: prompt.length, size, aspectRatio, useStream, baseUrl });
+    // GPT 模型使用专用端点 /v1/draw/completions，其他模型使用 /v1/draw/nano-banana
+    const modelLower = (model || '').toLowerCase().trim();
+    const isGptModel = modelLower.startsWith('gpt-image') || modelLower.includes('gpt-image');
+    const apiEndpoint = isGptModel
+        ? `${baseUrl}/v1/draw/completions`
+        : `${baseUrl}/v1/draw/nano-banana`;
+    console.log(`[Grsai] 模型匹配: model="${model}", modelLower="${modelLower}", isGptModel=${isGptModel}`);
+    console.log('Grsai 图片生成请求:', { model, promptLength: prompt.length, size, aspectRatio, useStream, baseUrl, isGptModel, apiEndpoint });
     const requestBody = {
         model,
         prompt,
@@ -37,11 +44,15 @@ export async function generateImageWithGrsai(params, apiKey, baseUrl = 'https://
     if (referenceImages?.length) {
         requestBody.urls = referenceImages;
     }
-    const apiEndpoint = `${baseUrl}/v1/draw/nano-banana`;
     console.log('🔑 Grsai API Key:', apiKey ? `${apiKey.substring(0, 10)}...` : '未配置');
     console.log('📡 Grsai API Endpoint:', apiEndpoint);
     const startTime = Date.now();
-    if (useStream) {
+    // GPT 模型端点可能不支持 SSE 流式，强制使用轮询模式
+    const effectiveUseStream = isGptModel ? false : useStream;
+    if (isGptModel && useStream) {
+        console.log('⚠️ GPT 模型不支持流式模式，自动切换为轮询模式');
+    }
+    if (effectiveUseStream) {
         const controller = new AbortController();
         const streamTimeout = setTimeout(() => controller.abort(), 300_000);
         const response = await fetch(apiEndpoint, {
@@ -84,6 +95,22 @@ export async function generateImageWithGrsai(params, apiKey, baseUrl = 'https://
                             if (data.progress !== undefined && onProgress) {
                                 onProgress(data.progress);
                             }
+                            // 检查无 status 字段的纯错误响应 (如 {"error": "..."})
+                            if (!data.status && (data.error || data.message || data.code === -1)) {
+                                const errMsg = data.error || data.message || 'Grsai API 返回错误';
+                                console.error('Grsai 流式错误响应:', errMsg, '完整数据:', JSON.stringify(data).substring(0, 1000));
+                                recordAICall({
+                                    provider: 'grsai',
+                                    model,
+                                    endpoint: apiEndpoint,
+                                    requestTime: Date.now() - startTime,
+                                    status: 'failed',
+                                    errorMessage: errMsg,
+                                    requestBody: sanitizeAICallBody({ model, prompt, aspectRatio, imageSize: size }),
+                                    responseBody: sanitizeAICallBody(data),
+                                });
+                                throw new Error(`Grsai API 错误: ${errMsg}`);
+                            }
                             if (data.status === 'succeeded') {
                                 // 兼容多种返回格式：results数组 或 直接返回url/content
                                 let imageUrl = null;
@@ -122,6 +149,7 @@ export async function generateImageWithGrsai(params, apiKey, baseUrl = 'https://
                             if (data.status === 'failed') {
                                 const failMsg = data.failure_reason || data.error || data.message || '图片生成失败';
                                 console.error('Grsai 图片生成失败:', failMsg);
+                                console.error('Grsai 失败完整响应:', JSON.stringify(data).substring(0, 1000));
                                 recordAICall({
                                     provider: 'grsai',
                                     model,
@@ -130,8 +158,13 @@ export async function generateImageWithGrsai(params, apiKey, baseUrl = 'https://
                                     status: 'failed',
                                     errorMessage: failMsg,
                                     requestBody: sanitizeAICallBody({ model, prompt, aspectRatio, imageSize: size }),
+                                    responseBody: sanitizeAICallBody(data),
                                 });
-                                throw new Error(failMsg);
+                                // 对无意义错误消息添加上下文
+                                const enhancedMsg = (failMsg === 'error' || failMsg === 'Error' || failMsg === 'unknown')
+                                    ? `Grsai ${model} 模型生成失败 (端点: ${apiEndpoint})，请检查模型名称和参数是否正确`
+                                    : failMsg;
+                                throw new Error(enhancedMsg);
                             }
                         }
                         catch (e) {
@@ -201,6 +234,7 @@ export async function generateImageWithGrsai(params, apiKey, baseUrl = 'https://
             throw new Error(`HTTP ${drawResponse.status}: ${errorText || drawResponse.statusText}`);
         }
         const drawData = await drawResponse.json();
+        console.log('Grsai 初始响应 (非流式):', JSON.stringify(drawData).substring(0, 500));
         if (drawData.error) {
             recordAICall({
                 provider: 'grsai',
@@ -317,36 +351,47 @@ export async function generateImageWithGrsai(params, apiKey, baseUrl = 'https://
                     }
                 }
                 if (result.status === 'failed') {
+                    // 对无意义错误消息添加上下文（与流式模式保持一致）
+                    const failMsg = result.failure_reason || result.error || '图片生成失败';
+                    const enhancedMsg = (failMsg === 'error' || failMsg === 'Error' || failMsg === 'unknown')
+                        ? `Grsai ${model} 模型生成失败 (端点: ${apiEndpoint}, taskId: ${taskId})，请检查模型名称和参数是否正确`
+                        : failMsg;
+                    console.error('Grsai 轮询图片生成失败:', enhancedMsg, '完整响应:', JSON.stringify(resultData).substring(0, 1000));
                     recordAICall({
                         provider: 'grsai',
                         model,
                         endpoint: apiEndpoint,
                         requestTime: Date.now() - startTime,
                         status: 'failed',
-                        errorMessage: result.failure_reason || result.error || '图片生成失败',
+                        errorMessage: enhancedMsg,
                         pollAttempts: attempt + 1,
                         taskId,
                         requestBody: sanitizeAICallBody(requestBody),
                         responseBody: sanitizeAICallBody({ failure_reason: result.failure_reason, error: result.error }),
                     });
-                    throw new Error(result.failure_reason || result.error || '图片生成失败');
+                    throw new Error(enhancedMsg);
                 }
             }
             else {
                 if (resultData.code !== 0) {
+                    const errorMsg = resultData.msg || resultData.message || 'apikey error';
+                    const enhancedMsg = (errorMsg === 'error' || errorMsg === 'Error' || errorMsg === 'unknown')
+                        ? `Grsai ${model} 模型轮询结果失败 (端点: ${apiEndpoint}, taskId: ${taskId})，请检查 API Key 和模型配置`
+                        : errorMsg;
+                    console.error('Grsai 轮询结果错误:', enhancedMsg, '完整响应:', JSON.stringify(resultData).substring(0, 1000));
                     recordAICall({
                         provider: 'grsai',
                         model,
                         endpoint: apiEndpoint,
                         requestTime: Date.now() - startTime,
                         status: 'failed',
-                        errorMessage: resultData.msg || resultData.message || 'apikey error',
+                        errorMessage: enhancedMsg,
                         pollAttempts: attempt + 1,
                         taskId,
                         requestBody: sanitizeAICallBody(requestBody),
                         responseBody: sanitizeAICallBody({ msg: resultData.msg, code: resultData.code }),
                     });
-                    throw new Error(resultData.msg || resultData.message || 'apikey error');
+                    throw new Error(enhancedMsg);
                 }
             }
         }

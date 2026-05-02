@@ -14,7 +14,11 @@ const IMAGE_MODELS: ModelInfo[] = [];
 
 // 支持的视频生成模型 - 从数据库动态加载
 // 此数组仅作为备用,优先使用数据库配置
-const VIDEO_MODELS: ModelInfo[] = [];
+const VIDEO_MODELS: ModelInfo[] = [
+  { id: 'doubao-seedance-1-5-pro-251215', name: 'Seedance 1.5 Pro', provider: 'volcengine', capability: 'videoGeneration' },
+  { id: 'dashscope/wan2.7', name: 'Wan 2.7 (百炼直连)', provider: 'dashscope', capability: 'videoGeneration' },
+  { id: 'dashscope/happyhorse-1.0', name: 'HappyHorse 1.0 (百炼)', provider: 'dashscope', capability: 'videoGeneration' },
+];
 
 const ASPECT_RATIOS = [
   { id: '16:9', name: '16:9 横版' },

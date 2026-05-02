@@ -1,7 +1,7 @@
 import { generateImageWithGrsai } from './grsai.js';
 import { generateImageWithOpenRouter } from './openRouter.js';
 import { generateVolcImage } from './volcEngine.js';
-import { submitWanxTask, waitForWanxTask } from './wanx.js';
+import { generateWanxImage } from './wanx.js';
 export async function generateImage(params, config) {
     const provider = config.provider?.toLowerCase() || '';
     if (provider === 'grsai') {
@@ -24,15 +24,13 @@ export async function generateImage(params, config) {
         }
         return await generateImageWithOpenRouter(params, config);
     }
-    // 阿里百炼 / DashScope / 通义万相（含 TokenPlan 包月路由）
+    // 阿里百炼 / DashScope / Wan2.7-Image（含 TokenPlan 包月路由）
     if (provider === 'dashscope' || provider === 'alibaba' || provider === 'bailian' || provider === 'tokenplan') {
-        console.log('使用阿里百炼通义万相图片生成...');
+        console.log('使用阿里百炼 Wan2.7-Image 图片生成...');
         if (!config.apiKey) {
             throw new Error('阿里百炼 API 密钥未配置');
         }
-        const taskId = await submitWanxTask(config, params.prompt);
-        const imageUrl = await waitForWanxTask(config, taskId);
-        return imageUrl;
+        return await generateWanxImage(config, params);
     }
     console.log('使用火山方舟图片生成...');
     return await generateVolcImage(params, config);
@@ -41,4 +39,4 @@ export async function generateImage(params, config) {
 export { generateImageWithOpenRouter } from './openRouter.js';
 export { generateImageWithVolcEngine, generateVolcImage } from './volcEngine.js';
 export { generateImageWithGrsai, getGrsaiResult } from './grsai.js';
-export { submitWanxTask, waitForWanxTask } from './wanx.js';
+export { generateWanxImage, submitWanxTask, waitForWanxTask } from './wanx.js';

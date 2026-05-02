@@ -1,18 +1,36 @@
 /**
- * 阿里云通义万相 (Qwen Wanx) 图片生成服务
+ * 阿里云 Wan2.7-Image 图片生成服务
  *
- * API 端点: POST /api/v1/services/aigc/text2image/image-synthesis (提交)
- *           GET  /api/v1/tasks/{taskId} (查询)
+ * API 端点: POST {baseUrl}/services/aigc/multimodal-generation/generation (同步)
  * 认证方式: Bearer Token (DashScope API Key)
- * 任务模式: 异步 (提交任务 → 轮询状态 → 获取结果)
+ * 任务模式: 同步返回（无需异步提交+轮询）
  *
- * 参考图片: 不支持
+ * 参考图片格式 (messages content 数组):
+ *   {"image": "参考图URL"}  — 每张参考图一个对象
  *
- * 响应取值: result.output.results[0].url
+ * 宽高比映射 (parameters.size，格式 "WIDTH*HEIGHT"):
+ *   1:1 → 1024*1024, 16:9 → 1280*720, 9:16 → 720*1280
+ *   4:3 → 1024*768, 3:4 → 768*1024
  *
- * 注意: 当前 generateImage() 统一入口中未接入此提供商，
- *       函数保留供未来使用
+ * 响应取值:
+ *   data.output.results[0].url 或
+ *   data.output.choices[0].message.content[0].image
  */
-import type { ApiConfig } from '../../types/index.js';
-export declare function submitWanxTask(config: ApiConfig, prompt: string): Promise<string>;
-export declare function waitForWanxTask(config: ApiConfig, taskId: string, maxRetries?: number): Promise<string>;
+import type { ApiConfig, ImageGenParams } from '../../types/index.js';
+/**
+ * 同步调用 Wan2.7-Image 生成图片
+ *
+ * 使用 multimodal-generation 同步端点，直接返回图片 URL。
+ * 无需异步提交+轮询，但响应可能耗时 30-120 秒。
+ */
+export declare function generateWanxImage(config: ApiConfig, params: ImageGenParams): Promise<string>;
+/**
+ * @deprecated 已废弃。Wan2.7-Image 使用同步 API，无需异步提交+轮询。
+ * 保留导出以兼容旧引用，调用会直接抛错提示迁移。
+ */
+export declare function submitWanxTask(_config: ApiConfig, _prompt: string): Promise<string>;
+/**
+ * @deprecated 已废弃。Wan2.7-Image 使用同步 API，无需异步提交+轮询。
+ * 保留导出以兼容旧引用，调用会直接抛错提示迁移。
+ */
+export declare function waitForWanxTask(_config: ApiConfig, _taskId: string): Promise<string>;

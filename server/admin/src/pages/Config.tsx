@@ -8,6 +8,7 @@ const PROVIDER_NAMES: Record<string, string> = {
   openrouter: 'OpenRouter',
   idealab: 'IdeaLab',
   qwen: '通义千问',
+  dashscope: '百炼(DashScope)',
   tokenplan: '百炼Token Plan',
 };
 

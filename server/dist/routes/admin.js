@@ -278,6 +278,9 @@ router.post('/config/test/:provider', async (req, res) => {
             case 'tokenplan':
                 testResult = await testTokenplan(providerConfig.apiKey, providerConfig.baseUrl);
                 break;
+            case 'dashscope':
+                testResult = await testDashscope(providerConfig.apiKey, providerConfig.baseUrl);
+                break;
             default:
                 return res.status(400).json({
                     success: false,
@@ -541,6 +544,50 @@ async function testTokenplan(apiKey, baseUrl) {
         else {
             const error = await response.text();
             return { success: false, message: `API 错误: ${response.status} ${error}` };
+        }
+    }
+    catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+            return { success: false, message: '连接超时' };
+        }
+        return { success: false, message: `请求失败: ${error.message}` };
+    }
+}
+// 测试 DashScope (百炼) 连通性
+async function testDashscope(apiKey, baseUrl) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    try {
+        // DashScope 视频 API 使用 /api/v1 端点，连通性测试使用兼容模式的 chat 接口
+        // 将 baseUrl 从 /api/v1 转换为 /compatible-mode/v1 用于文本测试
+        const chatBaseUrl = baseUrl.replace(/\/api\/v1$/, '/compatible-mode/v1');
+        const response = await fetch(`${chatBaseUrl}/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                model: 'qwen-turbo',
+                messages: [{ role: 'user', content: 'hi' }],
+                max_tokens: 1,
+            }),
+            signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        if (response.ok) {
+            return { success: true, message: '连接成功' };
+        }
+        else {
+            const error = await response.text();
+            // DashScope API Key 也可以用于视频生成，即使 chat 不可用也算连通
+            // 如果返回 401，说明 API Key 无效
+            if (response.status === 401) {
+                return { success: false, message: `API Key 无效: ${error}` };
+            }
+            // 其他错误（如 400 模型不存在）仍视为连通成功
+            return { success: true, message: `连接成功 (服务端返回 ${response.status})` };
         }
     }
     catch (error) {

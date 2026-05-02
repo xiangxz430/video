@@ -100,6 +100,8 @@ interface ScriptEditorProps {
 // 备用视频生成模型列表
 const VIDEO_MODELS: ModelInfo[] = [
   { id: 'doubao-seedance-1-5-pro-251215', name: 'Seedance 1.5 Pro', provider: 'volcengine', capability: 'videoGeneration' },
+  { id: 'dashscope/wan2.7', name: 'Wan 2.7 (百炼直连)', provider: 'dashscope', capability: 'videoGeneration' },
+  { id: 'dashscope/happyhorse-1.0', name: 'HappyHorse 1.0 (百炼)', provider: 'dashscope', capability: 'videoGeneration' },
 ];
 
 const ScriptEditor: React.FC<ScriptEditorProps> = ({ 

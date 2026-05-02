@@ -335,10 +335,17 @@ export function getModelDescription(provider: string, modelId: string): string {
       'deepseek-v3.2': 'TP-DeepSeek',
       'qwen-image-2.0': 'TP-图片快速',
       'qwen-image-2.0-pro': 'TP-图片高清',
-      'wan2.7-image': 'TP-Wan图片',
-      'wan2.7-image-pro': 'TP-Wan高清',
     };
     return tpDesc[modelId] || '百炼TokenPlan';
+  }
+  
+  // DashScope (百炼直连 - 图片生成)
+  if (provider === 'dashscope') {
+    const dashDesc: Record<string, string> = {
+      'wan2.7-image': '百炼-Wan图片',
+      'wan2.7-image-pro': '百炼-Wan高清',
+    };
+    return dashDesc[modelId] || '百炼(DashScope)';
   }
   
   return provider;
@@ -423,8 +430,6 @@ export function getModelPrice(provider: string, modelId: string): string | undef
       'deepseek-v3.2': '包月-Credits',
       'qwen-image-2.0': '包月-Credits',
       'qwen-image-2.0-pro': '包月-Credits',
-      'wan2.7-image': '包月-Credits',
-      'wan2.7-image-pro': '包月-Credits',
     };
     return tpPrice[modelId];
   }
@@ -434,6 +439,8 @@ export function getModelPrice(provider: string, modelId: string): string | undef
     const dashscopePrice: Record<string, string> = {
       'dashscope/wan2.7': '按秒计费',
       'dashscope/happyhorse-1.0': '按秒计费',
+      'wan2.7-image': '按张计费',
+      'wan2.7-image-pro': '按张计费',
     };
     return dashscopePrice[modelId];
   }

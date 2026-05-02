@@ -144,14 +144,35 @@ const EpisodeEdit: React.FC = () => {
   const [selectedVideoModel, setSelectedVideoModel] = useState('');
   const [availableVideoModels, setAvailableVideoModels] = useState<ModelInfo[]>([]);
   
-  // 动态加载可用的视频模型
+  // 备用视频生成模型列表（确保百炼等硬编码模型始终可见）
+  const VIDEO_MODELS_FALLBACK: ModelInfo[] = [
+    { id: 'doubao-seedance-1-5-pro-251215', name: 'Seedance 1.5 Pro', provider: 'volcengine', capability: 'videoGeneration' },
+    { id: 'dashscope/wan2.7', name: 'Wan 2.7 (百炼直连)', provider: 'dashscope', capability: 'videoGeneration' },
+    { id: 'dashscope/happyhorse-1.0', name: 'HappyHorse 1.0 (百炼)', provider: 'dashscope', capability: 'videoGeneration' },
+  ];
+
+  // 动态加载可用的视频模型（与硬编码备用列表合并）
   useEffect(() => {
     if (apiConfigs && apiConfigs.length > 0) {
-      const models = getEnabledModels(apiConfigs, 'videoGeneration');
-      setAvailableVideoModels(models);
+      const configModels = getEnabledModels(apiConfigs, 'videoGeneration');
+      if (configModels.length > 0) {
+        // 合并：apiConfigs 中的模型 + 备用列表中不重复的模型
+        const configModelIds = new Set(configModels.map(m => m.id));
+        const extraModels = VIDEO_MODELS_FALLBACK.filter(m => !configModelIds.has(m.id));
+        setAvailableVideoModels([...configModels, ...extraModels]);
+      } else {
+        setAvailableVideoModels(VIDEO_MODELS_FALLBACK);
+      }
       // 设置默认选中的模型
-      if (models.length > 0 && !selectedVideoModel) {
-        setSelectedVideoModel(models[0].id);
+      if (configModels.length > 0 && !selectedVideoModel) {
+        setSelectedVideoModel(configModels[0].id);
+      } else if (!selectedVideoModel) {
+        setSelectedVideoModel(VIDEO_MODELS_FALLBACK[0].id);
+      }
+    } else {
+      setAvailableVideoModels(VIDEO_MODELS_FALLBACK);
+      if (!selectedVideoModel) {
+        setSelectedVideoModel(VIDEO_MODELS_FALLBACK[0].id);
       }
     }
   }, [apiConfigs]);

@@ -47,11 +47,8 @@ export async function generateImageWithGrsai(params, apiKey, baseUrl = 'https://
     console.log('🔑 Grsai API Key:', apiKey ? `${apiKey.substring(0, 10)}...` : '未配置');
     console.log('📡 Grsai API Endpoint:', apiEndpoint);
     const startTime = Date.now();
-    // GPT 模型端点可能不支持 SSE 流式，强制使用轮询模式
-    const effectiveUseStream = isGptModel ? false : useStream;
-    if (isGptModel && useStream) {
-        console.log('⚠️ GPT 模型不支持流式模式，自动切换为轮询模式');
-    }
+    // GPT 模型端点同样返回 SSE 流式数据，使用统一的流式模式
+    const effectiveUseStream = useStream;
     if (effectiveUseStream) {
         const controller = new AbortController();
         const streamTimeout = setTimeout(() => controller.abort(), 300_000);

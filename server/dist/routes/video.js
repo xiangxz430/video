@@ -2,12 +2,11 @@ import { Router } from 'express';
 import { generateVideo, submitVolcVideoTask, waitForVolcVideo, queryVolcVideoTask, generateVideoWithDashScope } from '../services/videoGen.js';
 import { createApiConfig } from '../services/apiClients.js';
 const router = Router();
-// Seedance 模型名映射：OpenRouter ID → 火山引擎模型名
+// Seedance 1.x 模型名映射：OpenRouter ID → 火山引擎模型名
+// 注意：Seedance 2.x 仅 OpenRouter 支持，不可映射到火山引擎
 const SEEDANCE_MODEL_MAP = {
     'bytedance/seedance-1.5-pro': 'doubao-seedance-1-5-pro-251215',
     'bytedance/seedance-1-5-pro': 'doubao-seedance-1-5-pro-251215',
-    'bytedance/seedance-2.0': 'doubao-seedance-2-0-260128',
-    'bytedance/seedance-2.0-fast': 'doubao-seedance-2-0-fast-260128',
 };
 // POST /api/video/generate - SSE 流式生成视频
 router.post('/generate', async (req, res) => {
@@ -22,11 +21,12 @@ router.post('/generate', async (req, res) => {
             res.end();
             return;
         }
-        // Seedance 模型必须直连火山引擎，禁止通过 OpenRouter 中转
+        // Seedance 1.x 直连火山引擎；Seedance 2.x 保留在 OpenRouter（火山引擎不支持）
         if (model && (model.toLowerCase().includes('seedance'))) {
-            if (!provider || provider.toLowerCase() === 'openrouter') {
+            const isSeedance2 = model.toLowerCase().includes('seedance-2') || model.toLowerCase().includes('2.0');
+            if (!isSeedance2 && (!provider || provider.toLowerCase() === 'openrouter')) {
                 const mappedModel = SEEDANCE_MODEL_MAP[model] || 'doubao-seedance-1-5-pro-251215';
-                console.log(`[video] Seedance 模型自动路由到火山引擎: ${model} → ${mappedModel}`);
+                console.log(`[video] Seedance 1.x 模型自动路由到火山引擎: ${model} → ${mappedModel}`);
                 provider = 'volcengine';
                 model = mappedModel;
             }

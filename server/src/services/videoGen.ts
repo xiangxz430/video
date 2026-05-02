@@ -738,12 +738,11 @@ async function waitForOpenRouterVideo(
 
 // ========== 统一入口：根据 provider 自动路由 ==========
 
-// Seedance 模型名映射：OpenRouter ID → 火山引擎模型名
+// Seedance 1.x 模型名映射：OpenRouter ID → 火山引擎模型名
+// 注意：Seedance 2.x 仅 OpenRouter 支持，不可映射到火山引擎
 const SEEDANCE_OR_TO_VOLC: Record<string, string> = {
   'bytedance/seedance-1.5-pro': 'doubao-seedance-1-5-pro-251215',
   'bytedance/seedance-1-5-pro': 'doubao-seedance-1-5-pro-251215',
-  'bytedance/seedance-2.0': 'doubao-seedance-2-0-260128',
-  'bytedance/seedance-2.0-fast': 'doubao-seedance-2-0-fast-260128',
 };
 
 export async function generateVideo(
@@ -756,13 +755,16 @@ export async function generateVideo(
   
   console.log(`[generateVideo] provider=${provider}, model=${model}, prompt=${params.prompt?.substring(0, 50)}...`);
   
-  // Seedance 模型必须直连火山引擎，禁止通过 OpenRouter 中转
+  // Seedance 1.x 直连火山引擎；Seedance 2.x 保留在 OpenRouter（火山引擎不支持）
   if (model.includes('seedance') && (provider === 'openrouter' || !provider)) {
-    console.log(`[generateVideo] Seedance 模型自动路由到火山引擎: ${model}`);
-    const volcModel = SEEDANCE_OR_TO_VOLC[config.model || ''] || 'doubao-seedance-1-5-pro-251215';
-    const { createApiConfig } = await import('./apiClients.js');
-    const volcConfig = createApiConfig('volcengine', volcModel);
-    return generateVideoWithVolcEngine(params, volcConfig);
+    const isSeedance2 = model.includes('seedance-2') || model.includes('2.0');
+    if (!isSeedance2) {
+      console.log(`[generateVideo] Seedance 1.x 模型自动路由到火山引擎: ${model}`);
+      const volcModel = SEEDANCE_OR_TO_VOLC[config.model || ''] || 'doubao-seedance-1-5-pro-251215';
+      const { createApiConfig } = await import('./apiClients.js');
+      const volcConfig = createApiConfig('volcengine', volcModel);
+      return generateVideoWithVolcEngine(params, volcConfig);
+    }
   }
   
   switch (provider) {

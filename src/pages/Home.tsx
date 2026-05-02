@@ -44,8 +44,14 @@ const Home: React.FC = () => {
 
   const enabledVideoModels = React.useMemo(() => {
     if (apiConfigs && apiConfigs.length > 0) {
-      const models = getEnabledModels(apiConfigs, 'videoGeneration');
-      return models.length > 0 ? models : VIDEO_MODELS;
+      const configModels = getEnabledModels(apiConfigs, 'videoGeneration');
+      if (configModels.length > 0) {
+        // 合并：apiConfigs 中的模型 + VIDEO_MODELS 中不重复的模型
+        const configModelIds = new Set(configModels.map(m => m.id));
+        const extraModels = VIDEO_MODELS.filter(m => !configModelIds.has(m.id));
+        return [...configModels, ...extraModels];
+      }
+      return VIDEO_MODELS;
     }
     return VIDEO_MODELS;
   }, [apiConfigs]);

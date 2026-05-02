@@ -659,7 +659,7 @@ export async function generateVideoWithOpenRouter(
   }
   
   try {
-    const videoUrl = await waitForOpenRouterVideo(pollingUrl, config.apiKey, undefined, onProgress);
+    const videoUrl = await waitForOpenRouterVideo(pollingUrl, config.apiKey, 1200000, onProgress);
     
     recordAICall({
       provider: 'openrouter',
@@ -701,22 +701,31 @@ async function waitForOpenRouterVideo(
   const backoffFactor = 1.5;
 
   while (Date.now() - startTime < maxWaitTime) {
+    const elapsedSec = ((Date.now() - startTime) / 1000).toFixed(1);
     const response = await fetch(pollingUrl, {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'HTTP-Referer': 'https://video-generator.app', 'X-Title': 'Video Generator' }
     });
     if (!response.ok) {
+      console.log(`[OpenRouter] 轮询请求失败: url=${pollingUrl}, status=${response.status}, elapsed=${elapsedSec}s`);
       await new Promise(resolve => setTimeout(resolve, intervalMs));
       intervalMs = Math.min(intervalMs * backoffFactor, maxIntervalMs);
       continue;
     }
     const result = await response.json();
-    
+
     onProgress?.(result.status);
-    console.log(`[OpenRouter] 轮询状态: ${result.status}`);
-    
+    console.log(
+      `[OpenRouter] 轮询状态: status=${result.status}, ` +
+      `unsigned_urls=${Array.isArray(result.unsigned_urls) ? result.unsigned_urls.length : 'N/A'}, ` +
+      `elapsed=${elapsedSec}s, url=${pollingUrl}`
+    );
+
     // 视频生成完成，从 unsigned_urls 获取视频地址
-    if (result.status === 'completed' && result.unsigned_urls?.length) {
+    // OpenRouter 轮询响应中完成状态可能是 "complete" 或 "completed"
+    const isCompleted = result.status === 'completed' || result.status === 'complete';
+    if (isCompleted && result.unsigned_urls?.length) {
+      console.log(`[OpenRouter] 视频生成完成，获取 URL: ${result.unsigned_urls[0]}`);
       return result.unsigned_urls[0];
     }
     if (result.status === 'failed') {
@@ -733,7 +742,8 @@ async function waitForOpenRouterVideo(
     await new Promise(resolve => setTimeout(resolve, intervalMs));
     intervalMs = Math.min(intervalMs * backoffFactor, maxIntervalMs);
   }
-  throw new Error('OpenRouter 视频生成超时（超过 10 分钟）');
+  const timeoutMin = Math.round(maxWaitTime / 60000);
+  throw new Error(`OpenRouter 视频生成超时（超过 ${timeoutMin} 分钟）`);
 }
 
 // ========== 统一入口：根据 provider 自动路由 ==========

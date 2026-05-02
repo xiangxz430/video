@@ -511,9 +511,9 @@ export async function downloadVideo(videoUrl: string, subfolder?: string): Promi
   } catch (error: any) {
     const errMsg = error?.message || String(error);
     console.error('downloadVideo: 下载视频失败:', error);
-    pageLog(`[文件服务] 视频下载失败: ${errMsg}，使用远程URL作为fallback`);
-    // 下载失败时返回远程 URL 作为 fallback
-    return videoUrl;
+    pageLog(`[文件服务] 视频下载失败: ${errMsg}`);
+    // 下载失败时返回 null，让调用方自行决定是否使用远程URL作为fallback
+    return null;
   }
 }
 

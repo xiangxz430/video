@@ -2181,17 +2181,17 @@ const EpisodeEdit: React.FC = () => {
       
       console.log('视频生成成功:', videoUrl);
 
-      // 强制下载视频到本地（必须成功）
+      // 下载视频到本地
       let localVideoPath: string | null = null;
       try {
         localVideoPath = await downloadVideo(videoUrl, 'shots');
-        if (!localVideoPath) {
-          throw new Error('下载返回空路径');
+        if (localVideoPath) {
+          console.log('✅ 视频下载成功，本地路径:', localVideoPath);
+        } else {
+          console.log('⚠️ 视频下载失败，将使用远程URL:', videoUrl);
         }
-        console.log('视频下载成功，本地路径:', localVideoPath);
       } catch (downloadError: any) {
-        alert(`视频生成成功但保存失败: ${downloadError.message}\n视频URL: ${videoUrl}\n请手动下载保存`);
-        // 即使下载失败，也保存远程URL到历史
+        console.error('⚠️ 视频下载异常:', downloadError.message, '使用远程URL:', videoUrl);
         localVideoPath = null;
       }
 

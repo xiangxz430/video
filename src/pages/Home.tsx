@@ -447,11 +447,13 @@ const Home: React.FC = () => {
       try {
         downloadedPath = await downloadVideo(videoUrl, 'home_videos');
         if (downloadedPath) {
-          addVideoLog(`✅ 已保存到: ${downloadedPath}`);
+          addVideoLog(`✅ 视频已下载到本地: ${downloadedPath}`);
           setLocalVideoPath(downloadedPath);
+        } else {
+          addVideoLog(`⚠️ 视频下载失败，将使用远程URL播放`);
         }
       } catch (downloadError: any) {
-        addVideoLog(`⚠️ 下载失败: ${downloadError.message}，使用远程URL播放`);
+        addVideoLog(`⚠️ 视频下载异常: ${downloadError.message}，使用远程URL播放`);
       }
 
       // 保存到视频历史记录

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { generateImage, submitWanxTask, waitForWanxTask } from '../services/imageGen/index.js';
+import { generateImage, generateWanxImage } from '../services/imageGen/index.js';
 import { createApiConfig } from '../services/apiClients.js';
 
 const router = Router();
@@ -123,13 +123,12 @@ router.post('/character', async (req, res) => {
 
     const prompt = buildCharacterPrompt(description, referenceMode);
     
-    // 角色图片使用通义万相
+    // 角色图片使用 Wan2.7-Image
     const config = provider 
       ? createApiConfig(provider, model)
-      : createApiConfig('qwen', 'wanx-v1');
+      : createApiConfig('dashscope', 'wan2.7-image');
 
-    const taskId = await submitWanxTask(config, prompt);
-    const imageUrl = await waitForWanxTask(config, taskId);
+    const imageUrl = await generateWanxImage(config, { prompt });
 
     res.json({ imageUrl });
   } catch (error: any) {
@@ -153,13 +152,12 @@ router.post('/scene', async (req, res) => {
 
     const prompt = buildScenePrompt(description, referenceMode);
     
-    // 场景图片使用通义万相
+    // 场景图片使用 Wan2.7-Image
     const config = provider 
       ? createApiConfig(provider, model)
-      : createApiConfig('qwen', 'wanx-v1');
+      : createApiConfig('dashscope', 'wan2.7-image');
 
-    const taskId = await submitWanxTask(config, prompt);
-    const imageUrl = await waitForWanxTask(config, taskId);
+    const imageUrl = await generateWanxImage(config, { prompt });
 
     res.json({ imageUrl });
   } catch (error: any) {

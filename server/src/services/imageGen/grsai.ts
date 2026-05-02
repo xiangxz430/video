@@ -41,7 +41,14 @@ export async function generateImageWithGrsai(
   baseUrl: string = 'https://grsai.dakka.com.cn'
 ): Promise<string> {
   const { prompt, model = 'nano-banana-fast', size = '2K', aspectRatio = 'auto', referenceImages, useStream = true, onProgress } = params;
-  console.log('Grsai 图片生成请求:', { model, promptLength: prompt.length, size, aspectRatio, useStream, baseUrl });
+  
+  // GPT 模型使用专用端点 /v1/draw/completions，其他模型使用 /v1/draw/nano-banana
+  const isGptModel = model && (model.startsWith('gpt-image') || model.startsWith('GPT-Image'));
+  const apiEndpoint = isGptModel
+    ? `${baseUrl}/v1/draw/completions`
+    : `${baseUrl}/v1/draw/nano-banana`;
+  
+  console.log('Grsai 图片生成请求:', { model, promptLength: prompt.length, size, aspectRatio, useStream, baseUrl, isGptModel, apiEndpoint });
   
   const requestBody: any = {
     model,
@@ -55,14 +62,18 @@ export async function generateImageWithGrsai(
     requestBody.urls = referenceImages;
   }
   
-  const apiEndpoint = `${baseUrl}/v1/draw/nano-banana`;
-  
   console.log('🔑 Grsai API Key:', apiKey ? `${apiKey.substring(0, 10)}...` : '未配置');
   console.log('📡 Grsai API Endpoint:', apiEndpoint);
   
   const startTime = Date.now();
   
-  if (useStream) {
+  // GPT 模型端点可能不支持 SSE 流式，强制使用轮询模式
+  const effectiveUseStream = isGptModel ? false : useStream;
+  if (isGptModel && useStream) {
+    console.log('⚠️ GPT 模型不支持流式模式，自动切换为轮询模式');
+  }
+  
+  if (effectiveUseStream) {
     const controller = new AbortController();
     const streamTimeout = setTimeout(() => controller.abort(), 300_000);
     
@@ -115,6 +126,23 @@ export async function generateImageWithGrsai(
                 onProgress(data.progress);
               }
               
+              // 检查无 status 字段的纯错误响应 (如 {"error": "..."})
+              if (!data.status && (data.error || data.message || data.code === -1)) {
+                const errMsg = data.error || data.message || 'Grsai API 返回错误';
+                console.error('Grsai 流式错误响应:', errMsg, '完整数据:', JSON.stringify(data).substring(0, 1000));
+                recordAICall({
+                  provider: 'grsai',
+                  model,
+                  endpoint: apiEndpoint,
+                  requestTime: Date.now() - startTime,
+                  status: 'failed',
+                  errorMessage: errMsg,
+                  requestBody: sanitizeAICallBody({ model, prompt, aspectRatio, imageSize: size }),
+                  responseBody: sanitizeAICallBody(data),
+                });
+                throw new Error(`Grsai API 错误: ${errMsg}`);
+              }
+              
               if (data.status === 'succeeded') {
                 // 兼容多种返回格式：results数组 或 直接返回url/content
                 let imageUrl: string | null = null;
@@ -153,6 +181,7 @@ export async function generateImageWithGrsai(
               if (data.status === 'failed') {
                 const failMsg = data.failure_reason || data.error || data.message || '图片生成失败';
                 console.error('Grsai 图片生成失败:', failMsg);
+                console.error('Grsai 失败完整响应:', JSON.stringify(data).substring(0, 1000));
                 recordAICall({
                   provider: 'grsai',
                   model,
@@ -161,8 +190,13 @@ export async function generateImageWithGrsai(
                   status: 'failed',
                   errorMessage: failMsg,
                   requestBody: sanitizeAICallBody({ model, prompt, aspectRatio, imageSize: size }),
+                  responseBody: sanitizeAICallBody(data),
                 });
-                throw new Error(failMsg);
+                // 对无意义错误消息添加上下文
+                const enhancedMsg = (failMsg === 'error' || failMsg === 'Error' || failMsg === 'unknown')
+                  ? `Grsai ${model} 模型生成失败 (端点: ${apiEndpoint})，请检查模型名称和参数是否正确`
+                  : failMsg;
+                throw new Error(enhancedMsg);
               }
             } catch (e) {
               // 区分业务错误和JSON解析错误
@@ -230,6 +264,7 @@ export async function generateImageWithGrsai(
     }
     
     const drawData = await drawResponse.json();
+    console.log('Grsai 初始响应 (非流式):', JSON.stringify(drawData).substring(0, 500));
     
     if (drawData.error) {
       recordAICall({

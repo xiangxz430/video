@@ -4,8 +4,8 @@
  * 根据 provider 参数路由到对应提供商:
  *   - 'grsai'                            → Grsai (流式+轮询)
  *   - 'openrouter'                       → OpenRouter (chat/completions + vision)
- *   - 'dashscope'/'alibaba'/'bailian'    → 阿里百炼通义万相 (异步任务+轮询)
- *   - 'tokenplan'                        → 百炼TokenPlan (同通义万相，包月路由)
+ *   - 'dashscope'/'alibaba'/'bailian'    → 阿里百炼 Wan2.7-Image (同步)
+ *   - 'tokenplan'                        → 百炼TokenPlan (同 Wan2.7-Image，包月路由)
  *   - 默认                               → 火山方舟 Seedream (同步)
  * 
  * 各提供商实现已隔离到独立文件，修改某个提供商时
@@ -15,7 +15,7 @@ import type { ApiConfig, ImageGenParams } from '../../types/index.js';
 import { generateImageWithGrsai } from './grsai.js';
 import { generateImageWithOpenRouter } from './openRouter.js';
 import { generateVolcImage } from './volcEngine.js';
-import { submitWanxTask, waitForWanxTask } from './wanx.js';
+import { generateWanxImage } from './wanx.js';
 
 export async function generateImage(
   params: ImageGenParams,
@@ -45,15 +45,13 @@ export async function generateImage(
     return await generateImageWithOpenRouter(params, config);
   }
   
-  // 阿里百炼 / DashScope / 通义万相（含 TokenPlan 包月路由）
+  // 阿里百炼 / DashScope / Wan2.7-Image（含 TokenPlan 包月路由）
   if (provider === 'dashscope' || provider === 'alibaba' || provider === 'bailian' || provider === 'tokenplan') {
-    console.log('使用阿里百炼通义万相图片生成...');
+    console.log('使用阿里百炼 Wan2.7-Image 图片生成...');
     if (!config.apiKey) {
       throw new Error('阿里百炼 API 密钥未配置');
     }
-    const taskId = await submitWanxTask(config, params.prompt);
-    const imageUrl = await waitForWanxTask(config, taskId);
-    return imageUrl;
+    return await generateWanxImage(config, params);
   }
   
   console.log('使用火山方舟图片生成...');
@@ -64,4 +62,4 @@ export async function generateImage(
 export { generateImageWithOpenRouter } from './openRouter.js';
 export { generateImageWithVolcEngine, generateVolcImage } from './volcEngine.js';
 export { generateImageWithGrsai, getGrsaiResult } from './grsai.js';
-export { submitWanxTask, waitForWanxTask } from './wanx.js';
+export { generateWanxImage, submitWanxTask, waitForWanxTask } from './wanx.js';

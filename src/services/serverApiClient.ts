@@ -2,50 +2,37 @@
  * 服务端 API 客户端
  * 封装所有对服务端的 HTTP 请求，替代原来直接调用 AI Provider
  *
- * 使用 Tauri Shell 插件调用 curl 子进程发送 HTTP 请求。
- * curl 作为独立进程运行，不受 macOS 应用内网络限制影响。
+ * 使用 @tauri-apps/plugin-http 的 fetch API 发送 HTTP 请求。
  */
 
-import { Command } from '@tauri-apps/plugin-shell';
+import { fetch } from '@tauri-apps/plugin-http';
 
 /**
- * 使用 curl 子进程发送 HTTP 请求。
- * curl 在独立进程中运行，不受 macOS 应用内网络限制影响。
- * -s 静默模式，-w '\n%{http_code}' 在响应体后输出 HTTP 状态码方便解析。
+ * 基于 fetch 的基础 HTTP 请求内部实现
  */
-async function curlFetch(url: string, method: string, headers: Record<string, string>, body?: string): Promise<{ status: number; body: string }> {
-  const args: string[] = ['-s', '-w', '\n%{http_code}'];
+async function serverFetchInternal(
+  url: string,
+  method: string,
+  headers: Record<string, string>,
+  body?: string,
+  timeoutMs: number = DEFAULT_TIMEOUT
+): Promise<{ status: number; body: string }> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  if (method !== 'GET') {
-    args.push('-X', method);
+  try {
+    const response = await fetch(url, {
+      method,
+      headers,
+      body: body || undefined,
+      signal: controller.signal,
+    });
+
+    const responseBody = await response.text();
+    return { status: response.status, body: responseBody };
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  for (const [key, value] of Object.entries(headers)) {
-    if (value) args.push('-H', `${key}: ${value}`);
-  }
-
-  if (body) {
-    args.push('-d', body);
-  }
-
-  args.push('--max-time', '300');
-  args.push(url);
-
-  console.log('[curlFetch]', method, url);
-
-  const result = await Command.create('curl', args).execute();
-
-  if (result.code !== 0) {
-    throw new Error(`curl 失败 (exit ${result.code}): ${result.stderr}`);
-  }
-
-  // 解析输出：最后一行是状态码（-w 输出），前面是响应体
-  const output = result.stdout.trimEnd();
-  const lines = output.split('\n');
-  const statusCode = parseInt(lines.pop() || '0', 10);
-  const responseBody = lines.join('\n');
-
-  return { status: statusCode, body: responseBody };
 }
 
 // 清理 URL 末尾的斜杠和空白，避免双斜杠导致 404
@@ -72,17 +59,17 @@ interface ServerConfig {
 async function getServerConfig(): Promise<ServerConfig> {
   const serverUrlConfig = await getApiConfig('server_url');
   const serverApiKeyConfig = await getApiConfig('server_api_key');
-  
+
   const serverUrl = serverUrlConfig?.apiKey || '';
   const apiKey = serverApiKeyConfig?.apiKey || '';
-  
+
   console.log('[getServerConfig] serverUrlConfig:', JSON.stringify(serverUrlConfig));
   console.log('[getServerConfig] 最终使用 serverUrl:', serverUrl || '(未配置)');
-  
+
   if (!serverUrl) {
     throw new Error('服务端地址未配置，请先在设置页面配置服务端地址');
   }
-  
+
   return { serverUrl, apiKey };
 }
 
@@ -104,25 +91,25 @@ export async function saveServerConfig(serverUrl: string, apiKey: string): Promi
   ]);
 }
 
-// 默认超时时间（curl --max-time 已设置 300s）
+// 默认超时时间
 const DEFAULT_TIMEOUT = 300_000;
 
-// 基础请求封装（使用 curl 子进程）
+// 基础请求封装（使用 fetch）
 async function serverFetch(endpoint: string, body: any, options?: { timeout?: number }): Promise<any> {
   const { serverUrl, apiKey } = await getServerConfig();
-  
+
   if (!serverUrl) {
     throw new Error('服务端地址未配置，请先在设置页面配置服务端');
   }
-  
+
   const url = buildApiUrl(serverUrl, endpoint);
-  
+
   try {
-    const response = await curlFetch(url, 'POST', {
+    const response = await serverFetchInternal(url, 'POST', {
       'Content-Type': 'application/json',
       ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {})
-    }, JSON.stringify(body));
-    
+    }, JSON.stringify(body), options?.timeout);
+
     if (response.status < 200 || response.status >= 300) {
       let errorMessage = `服务端错误: ${response.status}`;
       try {
@@ -133,12 +120,12 @@ async function serverFetch(endpoint: string, body: any, options?: { timeout?: nu
       }
       throw new Error(errorMessage);
     }
-    
+
     return JSON.parse(response.body);
   } catch (error: any) {
     const msg = error?.message || '';
     console.error('[serverFetch] 请求失败:', url, '错误:', msg, '类型:', error?.constructor?.name);
-    if (msg.includes('curl 失败') || msg.includes('无法连接')) {
+    if (error.name === 'AbortError' || msg.includes('NetworkError') || msg.includes('Failed to fetch')) {
       throw new Error(`无法连接到服务端，请检查: 1) 服务端 ${serverUrl} 是否运行; 2) 网络是否正常`);
     }
     throw error;
@@ -188,8 +175,8 @@ function createSSEProcessor<T>(callbacks: {
   return { processLine, getResult: () => result, getError: () => serverError };
 }
 
-// 使用 curl 子进程实现 SSE 流式读取（-N 不缓冲，实时输出 SSE 数据）
-async function curlSSE<T>(
+// 基于 fetch + ReadableStream 实现 SSE 流式读取
+async function fetchSSE<T>(
   url: string,
   body: any,
   apiKey: string,
@@ -198,95 +185,77 @@ async function curlSSE<T>(
     onContent?: (chunk: string) => void;
     onError?: (error: string) => void;
   },
-  _timeoutMs: number = DEFAULT_TIMEOUT
+  timeoutMs: number = DEFAULT_TIMEOUT
 ): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const args: string[] = ['-s', '-N', '-X', 'POST'];
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {})
-    };
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {})
+  };
 
-    for (const [key, value] of Object.entries(headers)) {
-      if (value) args.push('-H', `${key}: ${value}`);
+  console.log('[fetchSSE] POST', url);
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
     }
 
-    args.push('-d', JSON.stringify(body));
-    args.push('--max-time', '300');
-    args.push(url);
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('响应没有可读流');
+    }
 
-    console.log('[curlSSE] POST', url);
-
-    const cmd = Command.create('curl', args);
+    const decoder = new TextDecoder();
     const { processLine, getResult, getError } = createSSEProcessor<T>(callbacks);
     let buffer = '';
-    let streamError: string | null = null;
-    let settled = false;
 
-    // 监听 curl stdout 输出（-N 不缓冲，实时输出 SSE 数据）
-    cmd.stdout.on('data', (data: string) => {
-      buffer += data;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       // 保留最后一个可能不完整的行
       buffer = lines.pop() || '';
       for (const line of lines) {
         processLine(line);
       }
-    });
+    }
 
-    cmd.stderr.on('data', (data: string) => {
-      console.error('[curlSSE] stderr:', data);
-    });
-
-    cmd.on('close', (data: { code: number }) => {
-      if (settled) return;
-
-      // 处理剩余缓冲
-      if (buffer.trim()) {
-        const remainingLines = buffer.split('\n');
-        for (const line of remainingLines) {
-          processLine(line);
-        }
+    // 处理剩余缓冲
+    if (buffer.trim()) {
+      const remainingLines = buffer.split('\n');
+      for (const line of remainingLines) {
+        processLine(line);
       }
+    }
 
-      const result = getResult();
-      const error = getError() || streamError;
+    const result = getResult();
+    const error = getError();
 
-      if (data.code !== 0 && !result) {
-        settled = true;
-        reject(new Error(`curl 进程异常退出: code ${data.code}`));
-        return;
-      }
-
-      if (error) {
-        settled = true;
-        reject(new Error(error));
-      } else if (result) {
-        settled = true;
-        resolve(result);
-      } else {
-        settled = true;
-        reject(new Error('服务端未返回完整结果'));
-      }
-    });
-
-    cmd.on('error', (error: string) => {
-      if (settled) return;
-      settled = true;
-      streamError = error;
-      reject(new Error(`curl 错误: ${error}`));
-    });
-
-    cmd.spawn().catch((err) => {
-      if (settled) return;
-      settled = true;
-      reject(new Error(`curl 启动失败: ${err}`));
-    });
-  });
+    if (error) {
+      throw new Error(error);
+    } else if (result) {
+      return result;
+    } else {
+      throw new Error('服务端未返回完整结果');
+    }
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
-// SSE 流式请求封装（使用 curl 子进程）
+// SSE 流式请求封装（使用 fetch）
 async function serverSSE<T>(
   endpoint: string,
   body: any,
@@ -303,7 +272,7 @@ async function serverSSE<T>(
   }
 
   const url = buildApiUrl(serverUrl, endpoint);
-  return curlSSE<T>(url, body, apiKey, callbacks, DEFAULT_TIMEOUT);
+  return fetchSSE<T>(url, body, apiKey, callbacks, DEFAULT_TIMEOUT);
 }
 
 // ========== 脚本相关 API ==========
@@ -483,18 +452,18 @@ export async function getApiUsageStats(): Promise<{
   }>;
 }> {
   const { serverUrl, apiKey } = await getServerConfig();
-  
+
   if (!serverUrl) {
     throw new Error('服务端地址未配置');
   }
-  
+
   const url = buildApiUrl(serverUrl, '/api/stats/usage');
-  
+
   try {
-    const response = await curlFetch(url, 'GET', {
+    const response = await serverFetchInternal(url, 'GET', {
       ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {})
     });
-    
+
     if (response.status < 200 || response.status >= 300) {
       let errorMessage = `服务端错误: ${response.status}`;
       try {
@@ -505,11 +474,11 @@ export async function getApiUsageStats(): Promise<{
       }
       throw new Error(errorMessage);
     }
-    
+
     const result = JSON.parse(response.body);
     return result.data;
   } catch (error: any) {
-    if (error.message?.includes('curl 失败') || error.message?.includes('curl 错误')) {
+    if (error.name === 'AbortError' || error.message?.includes('NetworkError') || error.message?.includes('Failed to fetch')) {
       throw new Error(`无法连接到服务端: ${serverUrl}`);
     }
     throw error;
@@ -520,7 +489,7 @@ export async function checkHealth(serverUrlOverride?: string, apiKeyOverride?: s
   try {
     let serverUrl: string;
     let apiKey: string;
-    
+
     if (serverUrlOverride) {
       serverUrl = serverUrlOverride;
       apiKey = apiKeyOverride || '';
@@ -529,29 +498,29 @@ export async function checkHealth(serverUrlOverride?: string, apiKeyOverride?: s
       serverUrl = config.serverUrl;
       apiKey = config.apiKey;
     }
-    
+
     if (!serverUrl) return { ok: false, error: '服务端地址未配置' };
-    
+
     const url = buildApiUrl(serverUrl, '/api/health');
     console.log('[checkHealth] 请求URL:', url);
-    
+
     try {
-      const response = await curlFetch(url, 'GET', {
+      const response = await serverFetchInternal(url, 'GET', {
         ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {})
       });
-      
-      console.log('[checkHealth] curlFetch 响应状态:', response.status);
-      
+
+      console.log('[checkHealth] fetch 响应状态:', response.status);
+
       if (response.status < 200 || response.status >= 300) {
         return { ok: false, error: `服务端返回状态码: ${response.status}` };
       }
-      
+
       const data = JSON.parse(response.body);
       console.log('[checkHealth] 响应数据:', JSON.stringify(data));
       return { ok: true };
     } catch (fetchError: any) {
       const fetchMsg = fetchError?.message || fetchError?.toString() || '未知错误';
-      console.error('[checkHealth] curlFetch 异常:', fetchMsg);
+      console.error('[checkHealth] fetch 异常:', fetchMsg);
       return { ok: false, error: fetchMsg };
     }
   } catch (e: any) {

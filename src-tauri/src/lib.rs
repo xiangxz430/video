@@ -23,95 +23,60 @@ pub struct MergeResult {
     pub error: Option<String>,
 }
 
-/// 下载图片（使用 curl 命令）
+/// 下载图片（使用 reqwest HTTP 库，避免 curl 命令行参数过长触发 ARG_MAX 限制）
 #[tauri::command]
 async fn download_image(url: String) -> Result<DownloadResult, String> {
     println!("[Rust] 开始下载图片: {}", url);
-    
-    // 生成唯一临时文件名，避免并发冲突
-    let temp_file = format!("/tmp/downloaded_image_{}.tmp", std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis());
-    
-    // 使用 curl 下载，curl 能正确处理重定向和特殊 URL
-    // 添加 -v 来查看详细的下载过程，包括重定向
-    let output = Command::new("curl")
-        .args(&[
-            "-L",                      // 跟随重定向
-            "-s",                      // 静默模式
-            "-o", &temp_file,          // 输出到临时文件
-            &url
-        ])
-        .output();
-    
-    match output {
-        Ok(output) => {
-            if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                let error_msg = format!("curl 下载失败: {} - stderr: {}", output.status, stderr);
-                println!("[Rust] {}", error_msg);
-                // 清理临时文件
-                let _ = std::fs::remove_file(&temp_file);
-                return Ok(DownloadResult {
-                    success: false,
-                    data: None,
-                    content_type: None,
-                    error: Some(error_msg),
-                });
-            }
-            
-            // 读取临时文件
-            let bytes = match std::fs::read(&temp_file) {
-                Ok(b) => b,
-                Err(e) => {
-                    let error_msg = format!("读取临时文件失败: {}", e);
-                    println!("[Rust] {}", error_msg);
-                    let _ = std::fs::remove_file(&temp_file);
-                    return Ok(DownloadResult {
-                        success: false,
-                        data: None,
-                        content_type: None,
-                        error: Some(error_msg),
-                    });
-                }
-            };
-            
-            // 根据文件魔数检测真实图片格式
-            let content_type = if bytes.len() >= 12 {
-                if bytes[0] == 0x89 && bytes[1] == 0x50 { Some("image/png".to_string()) }
-                else if bytes[0] == 0xFF && bytes[1] == 0xD8 { Some("image/jpeg".to_string()) }
-                else if bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[8] == 0x57 && bytes[9] == 0x45 { Some("image/webp".to_string()) }
-                else if bytes[0] == 0x47 && bytes[1] == 0x49 { Some("image/gif".to_string()) }
-                else { Some("image/png".to_string()) }
-            } else {
-                Some("image/png".to_string())
-            };
-            
-            println!("[Rust] 下载成功，数据大小: {} bytes, 格式: {:?}", bytes.len(), content_type);
 
-            
-            // 清理临时文件
-            let _ = std::fs::remove_file(&temp_file);
-            
-            Ok(DownloadResult {
-                success: true,
-                data: Some(bytes),
-                content_type,
-                error: None,
-            })
-        }
-        Err(e) => {
-            let error_msg = format!("执行 curl 失败: {}", e);
-            println!("[Rust] {}", error_msg);
-            Ok(DownloadResult {
-                success: false,
-                data: None,
-                content_type: None,
-                error: Some(error_msg),
-            })
-        }
+    // 使用 reqwest 下载，绕过系统代理，避免 curl ARG_MAX 限制
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| format!("创建HTTP客户端失败: {}", e))?;
+
+    let response = client.get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("下载图片失败: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status().as_u16();
+        let error_msg = format!("下载图片失败，HTTP状态码: {}", status);
+        println!("[Rust] {}", error_msg);
+        return Ok(DownloadResult {
+            success: false,
+            data: None,
+            content_type: None,
+            error: Some(error_msg),
+        });
     }
+
+    let bytes = response.bytes()
+        .await
+        .map_err(|e| format!("读取图片数据失败: {}", e))?;
+
+    let bytes = bytes.to_vec();
+
+    // 根据文件魔数检测真实图片格式
+    let content_type = if bytes.len() >= 12 {
+        if bytes[0] == 0x89 && bytes[1] == 0x50 { Some("image/png".to_string()) }
+        else if bytes[0] == 0xFF && bytes[1] == 0xD8 { Some("image/jpeg".to_string()) }
+        else if bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[8] == 0x57 && bytes[9] == 0x45 { Some("image/webp".to_string()) }
+        else if bytes[0] == 0x47 && bytes[1] == 0x49 { Some("image/gif".to_string()) }
+        else { Some("image/png".to_string()) }
+    } else {
+        Some("image/png".to_string())
+    };
+
+    println!("[Rust] 下载成功，数据大小: {} bytes, 格式: {:?}", bytes.len(), content_type);
+
+    Ok(DownloadResult {
+        success: true,
+        data: Some(bytes),
+        content_type,
+        error: None,
+    })
 }
 
 /// 解析域名获取 IP 地址

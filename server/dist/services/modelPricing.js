@@ -49,6 +49,13 @@ const MODEL_PRICES = {
     'grsai:*': { inputPrice: 0, outputPrice: 0, perCallPrice: 0.02 },
     // ========== Idealab (图片生成) ==========
     'idealab:*': { inputPrice: 0, outputPrice: 0, perCallPrice: 0.03 },
+    // ========== DashScope (百炼直连 - 视频生成) ==========
+    'dashscope:wan2.7-t2v-2026-04-25': { inputPrice: 0, outputPrice: 0, perCallPrice: 0.10 },
+    'dashscope:wan2.7-i2v': { inputPrice: 0, outputPrice: 0, perCallPrice: 0.10 },
+    'dashscope:wan2.7-r2v': { inputPrice: 0, outputPrice: 0, perCallPrice: 0.10 },
+    'dashscope:happyhorse-1.0-t2v': { inputPrice: 0, outputPrice: 0, perCallPrice: 0.10 },
+    'dashscope:happyhorse-1.0-i2v': { inputPrice: 0, outputPrice: 0, perCallPrice: 0.10 },
+    'dashscope:happyhorse-1.0-r2v': { inputPrice: 0, outputPrice: 0, perCallPrice: 0.10 },
     // ========== 默认兜底 ==========
     '*:*': { inputPrice: 0.001, outputPrice: 0.002 },
 };

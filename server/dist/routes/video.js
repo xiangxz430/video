@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { generateVideo, submitVolcVideoTask, waitForVolcVideo, queryVolcVideoTask } from '../services/videoGen.js';
+import { generateVideo, submitVolcVideoTask, waitForVolcVideo, queryVolcVideoTask, generateVideoWithDashScope } from '../services/videoGen.js';
 import { createApiConfig } from '../services/apiClients.js';
 const router = Router();
 // Seedance 模型名映射：OpenRouter ID → 火山引擎模型名
@@ -70,6 +70,21 @@ router.post('/generate', async (req, res) => {
                 res.write(`event: error\ndata: ${JSON.stringify({ message: error.message || '视频生成失败' })}\n\n`);
                 res.end();
             }
+        }
+        else if (providerLower === 'dashscope') {
+            // DashScope（阿里百炼）使用带进度回调的生成
+            const onProgress = (status) => {
+                res.write(`event: progress\ndata: ${JSON.stringify({
+                    phase: 'generating',
+                    progress: 0,
+                    status,
+                    message: `状态: ${status}`
+                })}\n\n`);
+            };
+            const videoUrl = await generateVideoWithDashScope({ prompt, firstFrameImage, lastFrameImage, referenceImages, aspectRatio, duration, enableAudio, seed, size, callbackUrl, providerOptions }, config, onProgress);
+            // 发送完成事件
+            res.write(`event: done\ndata: ${JSON.stringify({ videoUrl })}\n\n`);
+            res.end();
         }
         else {
             // 其他 provider（GRSai, OpenRouter）使用带进度回调的生成

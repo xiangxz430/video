@@ -184,8 +184,12 @@ async function submitGRSaiVideoTask(params, config) {
     };
     if (firstFrameImage)
         requestBody.url = firstFrameImage;
-    else if (referenceImages && referenceImages.length > 0)
+    else if (referenceImages && referenceImages.length > 0) {
+        if (referenceImages.length > 1) {
+            console.warn(`[GRSai视频] 仅支持单张参考图，已自动使用第一张，丢弃了 ${referenceImages.length - 1} 张`);
+        }
         requestBody.url = referenceImages[0];
+    }
     const bodyStr = JSON.stringify(requestBody);
     console.log(`[GRSai] 提交视频任务, body大小: ${(bodyStr.length / 1024).toFixed(1)}KB`);
     const SUBMIT_TIMEOUT_MS = 120_000;
@@ -665,4 +669,195 @@ export async function generateVideoFromFirstLastFrame(prompt, firstFrameImage, l
 }
 export async function generateVideoFromReferenceImages(prompt, referenceImages, config) {
     return generateVideo({ prompt, referenceImages }, config);
+}
+// ========== DashScope 视频生成 (wan2.7 / happyhorse-1.0) ==========
+function resolveDashScopeModel(configModel, params) {
+    const isWan = configModel.includes('wan2.7');
+    const isHappyHorse = configModel.includes('happyhorse');
+    if (params.referenceImages?.length) {
+        return isWan ? 'wan2.7-r2v' : 'happyhorse-1.0-r2v';
+    }
+    if (params.firstFrameImage) {
+        return isWan ? 'wan2.7-i2v' : 'happyhorse-1.0-i2v';
+    }
+    return isWan ? 'wan2.7-t2v-2026-04-25' : 'happyhorse-1.0-t2v';
+}
+export async function generateVideoWithDashScope(params, config, onProgress) {
+    const startTime = Date.now();
+    const configModel = config.model || 'dashscope/wan2.7';
+    const actualModel = resolveDashScopeModel(configModel, params);
+    const baseUrl = config.baseUrl || 'https://dashscope.aliyuncs.com/api/v1';
+    // 构建请求体
+    const requestBody = {
+        model: actualModel,
+        input: { prompt: params.prompt },
+        parameters: {
+            resolution: params.resolution === '1080' ? '1080P' : '720P',
+            ratio: params.aspectRatio || '16:9',
+            duration: Math.max(2, Math.min(15, params.duration || 5)),
+        }
+    };
+    // seed
+    if (params.seed !== undefined) {
+        requestBody.parameters.seed = params.seed;
+    }
+    // 构建 media 数组
+    if (params.firstFrameImage) {
+        // i2v 模型：首帧/尾帧
+        const media = [];
+        media.push({ type: 'first_frame', url: params.firstFrameImage });
+        if (params.lastFrameImage) {
+            media.push({ type: 'last_frame', url: params.lastFrameImage });
+        }
+        requestBody.input.media = media;
+    }
+    else if (params.referenceImages?.length) {
+        // r2v 模型：参考图
+        const media = params.referenceImages.map(url => ({
+            type: 'reference_image', url
+        }));
+        requestBody.input.media = media;
+    }
+    // t2v 模型：不设置 media 字段
+    const bodyStr = JSON.stringify(requestBody);
+    console.log(`[DashScope] 提交视频请求 → POST ${baseUrl}/services/aigc/video-generation/video-synthesis, model: ${actualModel}`);
+    // 提交任务（带超时和重试）
+    const SUBMIT_TIMEOUT_MS = 120_000;
+    const MAX_RETRIES = 2;
+    let lastError;
+    let submitResult;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        if (attempt > 0) {
+            const delayMs = 2000 * attempt;
+            console.log(`[DashScope] 第 ${attempt} 次重试提交，等待 ${delayMs}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), SUBMIT_TIMEOUT_MS);
+            const response = await fetch(`${baseUrl}/services/aigc/video-generation/video-synthesis`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${config.apiKey}`,
+                    'X-DashScope-Async': 'enable',
+                },
+                body: bodyStr,
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            if (!response.ok) {
+                const errText = await response.text();
+                console.error(`[DashScope] API 返回错误: ${response.status} ${errText}`);
+                throw new Error(`DashScope 视频API请求失败: ${response.status} ${errText}`);
+            }
+            submitResult = await response.json();
+            console.log(`[DashScope] 提交响应: task_id=${submitResult.output?.task_id}, task_status=${submitResult.output?.task_status}`);
+            const taskId = submitResult.output?.task_id;
+            if (!taskId) {
+                throw new Error('DashScope 返回缺少 task_id');
+            }
+            // 轮询等待视频生成完成
+            try {
+                const videoUrl = await waitForDashScopeVideo(taskId, config.apiKey, baseUrl, 600000, onProgress);
+                recordAICall({
+                    provider: 'dashscope',
+                    model: actualModel,
+                    endpoint: `${baseUrl}/services/aigc/video-generation/video-synthesis`,
+                    requestTime: Date.now() - startTime,
+                    status: 'success',
+                    taskId,
+                    requestBody: sanitizeAICallBody({ model: actualModel, prompt: params.prompt?.slice(0, 200), aspectRatio: params.aspectRatio, duration: params.duration }),
+                    responseBody: sanitizeAICallBody({ videoUrl }),
+                });
+                return videoUrl;
+            }
+            catch (error) {
+                recordAICall({
+                    provider: 'dashscope',
+                    model: actualModel,
+                    endpoint: `${baseUrl}/services/aigc/video-generation/video-synthesis`,
+                    requestTime: Date.now() - startTime,
+                    status: error.message?.includes('超时') ? 'timeout' : 'failed',
+                    errorMessage: error.message,
+                    taskId,
+                    requestBody: sanitizeAICallBody({ model: actualModel, prompt: params.prompt?.slice(0, 200), aspectRatio: params.aspectRatio, duration: params.duration }),
+                });
+                throw error;
+            }
+        }
+        catch (error) {
+            lastError = error;
+            const msg = error?.message || '';
+            console.error(`[DashScope] 第 ${attempt + 1} 次提交失败:`, msg);
+            // 非网络错误（如 API 返回的业务错误）不重试
+            const isNetworkError = msg.includes('fetch failed') ||
+                msg.includes('AbortError') ||
+                msg.includes('network') ||
+                msg.includes('connect') ||
+                msg.includes('timeout') ||
+                msg.includes('ECONN');
+            if (!isNetworkError)
+                throw error;
+        }
+    }
+    console.error(`[DashScope] 提交失败，已重试 ${MAX_RETRIES} 次`);
+    throw new Error(`DashScope 网络请求失败（已重试${MAX_RETRIES}次）: ${lastError?.message || '未知错误'}。请检查网络连接或稍后重试`);
+}
+export async function waitForDashScopeVideo(taskId, apiKey, baseUrl, maxWaitMs = 600000, onProgress) {
+    const startTime = Date.now();
+    // 指数退避：初始 5s，每次增长 1.5x，上限 20s
+    let intervalMs = 5000;
+    const maxIntervalMs = 20000;
+    const backoffFactor = 1.5;
+    while (Date.now() - startTime < maxWaitMs) {
+        try {
+            const response = await fetch(`${baseUrl}/tasks/${taskId}`, {
+                method: 'GET',
+                headers: { 'Authorization': `Bearer ${apiKey}` }
+            });
+            if (!response.ok) {
+                // 网络错误时继续轮询
+                await new Promise(resolve => setTimeout(resolve, intervalMs));
+                intervalMs = Math.min(intervalMs * backoffFactor, maxIntervalMs);
+                continue;
+            }
+            const result = await response.json();
+            const taskStatus = result.output?.task_status;
+            onProgress?.(taskStatus);
+            console.log(`[DashScope] 轮询状态: ${taskStatus}`);
+            if (taskStatus === 'SUCCEEDED') {
+                const videoUrl = result.output?.video_url;
+                if (!videoUrl)
+                    throw new Error('DashScope 视频生成成功但未返回 video_url');
+                return videoUrl;
+            }
+            if (taskStatus === 'FAILED') {
+                throw new Error(`DashScope 视频生成失败: ${result.output?.message || result.output?.code || '未知错误'}`);
+            }
+            if (taskStatus === 'CANCELED') {
+                throw new Error('DashScope 视频生成任务已取消');
+            }
+            if (taskStatus === 'UNKNOWN') {
+                throw new Error('DashScope 视频生成任务状态异常 (UNKNOWN)');
+            }
+            // PENDING / RUNNING → 继续轮询
+        }
+        catch (error) {
+            // 非 DashScope 业务错误（网络错误等），继续轮询
+            const msg = error?.message || '';
+            const isBusinessError = msg.includes('DashScope 视频生成失败') ||
+                msg.includes('DashScope 视频生成任务已取消') ||
+                msg.includes('DashScope 视频生成任务状态异常') ||
+                msg.includes('DashScope 视频生成成功但未返回');
+            if (isBusinessError)
+                throw error;
+            // 网络错误，继续轮询
+            console.warn(`[DashScope] 轮询网络错误，继续等待: ${msg}`);
+        }
+        // 等待后再次轮询
+        await new Promise(resolve => setTimeout(resolve, intervalMs));
+        intervalMs = Math.min(intervalMs * backoffFactor, maxIntervalMs);
+    }
+    throw new Error('DashScope 视频生成超时（超过 10 分钟）');
 }

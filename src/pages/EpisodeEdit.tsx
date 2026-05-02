@@ -754,7 +754,7 @@ const EpisodeEdit: React.FC = () => {
         size: selectedImageSize,
         aspectRatio: shot.aspectRatio || videoAspectRatio,
         // 支持多图输入，如果没有参考图片则不传
-        referenceImage: referenceImages.length > 0 ? referenceImages : undefined,
+        referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
         referenceImageMeta: referenceImages.length > 0
           ? referenceImageNames.map((name, idx) => ({
               fileName: name,
@@ -1138,7 +1138,7 @@ const EpisodeEdit: React.FC = () => {
         model: selectedImageModel,
         size: selectedImageSize,
         aspectRatio: shot.aspectRatio || videoAspectRatio,
-        referenceImage: referenceImages, // 使用多图输入（首帧+场景+角色）
+        referenceImages: referenceImages.length > 0 ? referenceImages : undefined, // 使用多图输入（首帧+场景+角色）
         referenceImageMeta: referenceImages.length > 0
           ? referenceImageNames.map((name, idx) => ({
               fileName: name,

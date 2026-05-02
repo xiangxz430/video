@@ -221,12 +221,17 @@ export function requestLogger(req, res, next) {
         return originalWrite(chunk, ...args);
     };
     // AsyncLocalStorage 包裹，下游可记录 AI 调用
-    // 将 res.on('finish') 和 next() 都放在 run 回调内：
+    // 将 res.on('finish')/'close' 和 next() 都放在 run 回调内：
     //   - next() 触发的异步路由处理器通过 async_hooks 继承上下文，recordAICall() 可正常获取 store
-    //   - res.on('finish') 在 run 作用域内注册，通过闭包直接引用 logCtx（不依赖 logStorage.getStore()）
+    //   - res.on('finish')/'close') 在 run 作用域内注册，通过闭包直接引用 logCtx（不依赖 logStorage.getStore()）
+    //   - 使用 logged 标志位防止 finish 和 close 事件重复记录
     const logCtx = { aiApiCalls: [] };
     logStorage.run(logCtx, () => {
-        res.on('finish', () => {
+        let logged = false;
+        const saveLog = (interrupted) => {
+            if (logged)
+                return;
+            logged = true;
             const duration = Date.now() - startTime;
             try {
                 const apiKey = extractApiKey(req);
@@ -236,6 +241,9 @@ export function requestLogger(req, res, next) {
                 let error = null;
                 if (res.statusCode >= 400) {
                     error = res.locals.errorMessage || `HTTP ${res.statusCode}`;
+                }
+                if (interrupted) {
+                    error = error ? `${error} | 连接中断` : '连接中断';
                 }
                 const responseBody = sanitizeBody(res._responseBody);
                 const aiApiCalls = logCtx.aiApiCalls.length > 0 ? logCtx.aiApiCalls : undefined;
@@ -249,13 +257,14 @@ export function requestLogger(req, res, next) {
                     provider: req.body?.provider || inferDefaultProvider(reqPath) || 'unknown',
                     model: req.body?.model || 'unknown',
                     apiKeyMasked,
-                    statusCode: res.statusCode,
+                    statusCode: interrupted ? (res.statusCode || 499) : res.statusCode,
                     duration,
                     error,
                     requestSummary: extractRequestSummary(req.body),
                     requestBody,
                     responseBody,
                     ...(aiApiCalls ? { aiApiCalls } : {}),
+                    ...(interrupted ? { connectionInterrupted: true } : {}),
                 };
                 // 异步写入 MongoDB（fire-and-forget，不阻塞请求）
                 getLogsCollection().insertOne(logEntry).catch((err) => {
@@ -264,6 +273,15 @@ export function requestLogger(req, res, next) {
             }
             catch (error) {
                 console.error('[RequestLogger] 记录日志失败:', error);
+            }
+        };
+        // finish: 响应正常发送完成
+        res.on('finish', () => saveLog(false));
+        // close: 连接被关闭（客户端超时/断开等）
+        // 当 finish 未触发时（如 SSE 连接中断），通过 close 兜底记录日志
+        res.on('close', () => {
+            if (!res.writableFinished) {
+                saveLog(true);
             }
         });
         next();

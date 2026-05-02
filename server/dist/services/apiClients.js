@@ -418,7 +418,8 @@ export function createApiConfig(provider, model) {
         openrouter: 'black-forest-labs/flux.2-pro',
         idealab: 'qwen_max',
         qwen: 'qwen-max',
-        tokenplan: 'qwen3.6-plus'
+        tokenplan: 'qwen3.6-plus',
+        dashscope: 'wan2.7-t2v-2026-04-25',
     };
     return {
         name: `${provider}_generation`,

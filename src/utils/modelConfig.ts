@@ -183,6 +183,9 @@ function getModelDisplayName(provider: string, modelId: string): string {
     'bytedance/seedance-2.0-fast': 'Seedance 2.0 Fast',
     'alibaba/wan-2.7': 'Wan 2.7',
     'alibaba/wan-2.6': 'Wan 2.6',
+    // DashScope (百炼直连) - 视频
+    'dashscope/wan2.7': 'Wan 2.7 (百炼直连)',
+    'dashscope/happyhorse-1.0': 'HappyHorse 1.0 (百炼)',
     // Token Plan (百炼包月)
     'qwen3.6-plus': 'Qwen3.6-Plus',
     'glm-5': 'GLM-5',
@@ -426,6 +429,15 @@ export function getModelPrice(provider: string, modelId: string): string | undef
     return tpPrice[modelId];
   }
   
+  // DashScope (百炼直连)
+  if (provider === 'dashscope') {
+    const dashscopePrice: Record<string, string> = {
+      'dashscope/wan2.7': '按秒计费',
+      'dashscope/happyhorse-1.0': '按秒计费',
+    };
+    return dashscopePrice[modelId];
+  }
+
   return undefined;
 }
 

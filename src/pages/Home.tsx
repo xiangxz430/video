@@ -247,7 +247,7 @@ const Home: React.FC = () => {
       addImageLog(`📏 比例: ${selectedAspectRatio}`);
 
       // 处理参考图
-      let referenceImage: string | string[] | undefined;
+      let referenceImages: string[] | undefined;
       let referenceImageMeta: { fileName: string; filePath: string }[] | undefined;
       if (refImages.length > 0) {
         addImageLog(`📷 处理 ${refImages.length} 张参考图...`);
@@ -261,7 +261,7 @@ const Home: React.FC = () => {
           })
         );
         const validEntries = processed.filter(e => e.base64 !== '');
-        referenceImage = validEntries.length === 1 ? validEntries[0].base64 : validEntries.map(e => e.base64);
+        referenceImages = validEntries.map(e => e.base64);
         referenceImageMeta = validEntries.map(e => ({
           fileName: e.filePath.split('/').pop() || e.filePath,
           filePath: e.filePath,
@@ -275,7 +275,7 @@ const Home: React.FC = () => {
         provider: modelInfo?.provider,
         model: selectedImageModel,
         aspectRatio: selectedAspectRatio,
-        referenceImage,
+        referenceImages,
         referenceImageMeta,
       });
 

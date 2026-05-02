@@ -304,22 +304,22 @@ const CharacterEditModal: React.FC<CharacterEditModalProps> = ({ character, onCl
       addLog(`🤖 模型: ${selectedModelInfo?.name || selectedModel}`);
 
       // 准备参考图片（主图）
-      let referenceImage: string | undefined;
+      let referenceImages: string[] = [];
       if (imageUrl) {
         if (isLocalFilePath(imageUrl)) {
           addLog('🔄 将本地主图转换为Base64...');
           const base64 = await localImageToBase64(imageUrl);
           if (base64) {
-            referenceImage = base64;
+            referenceImages = [base64];
             addLog(`✅ Base64转换成功 (${base64.length}字符)`);
           }
         } else {
-          referenceImage = imageUrl;
+          referenceImages = [imageUrl];
           addLog(`✅ 使用远程URL作为参考图`);
         }
       }
 
-      if (!referenceImage) {
+      if (referenceImages.length === 0) {
         alert('无法处理角色主图，请确保主图格式正确');
         return;
       }
@@ -341,7 +341,7 @@ const CharacterEditModal: React.FC<CharacterEditModalProps> = ({ character, onCl
         model: selectedModel,
         size: selectedSize,
         aspectRatio: selectedAspectRatio,
-        referenceImage: referenceImage,
+        referenceImages,
         referenceImageMeta: [{ fileName: imageUrl.split('/').pop() || imageUrl, filePath: imageUrl }],
       };
 
@@ -432,15 +432,15 @@ const CharacterEditModal: React.FC<CharacterEditModalProps> = ({ character, onCl
       addLog(`🤖 模型: ${selectedModelInfo?.name || selectedModel}`);
 
       // 准备参考图片
-      let referenceImage: string | undefined;
+      let referenceImages: string[] = [];
       if (isLocalFilePath(imageUrl)) {
         const base64 = await localImageToBase64(imageUrl);
-        if (base64) referenceImage = base64;
+        if (base64) referenceImages = [base64];
       } else {
-        referenceImage = imageUrl;
+        referenceImages = [imageUrl];
       }
 
-      if (!referenceImage) {
+      if (referenceImages.length === 0) {
         alert('无法处理角色主图');
         return;
       }
@@ -458,7 +458,7 @@ const CharacterEditModal: React.FC<CharacterEditModalProps> = ({ character, onCl
         model: selectedModel,
         size: selectedSize,
         aspectRatio: selectedAspectRatio,
-        referenceImage,
+        referenceImages,
         referenceImageMeta: [{ fileName: imageUrl.split('/').pop() || imageUrl, filePath: imageUrl }],
       };
 
@@ -591,7 +591,7 @@ const CharacterEditModal: React.FC<CharacterEditModalProps> = ({ character, onCl
         model: selectedModel,
         size: selectedSize,
         aspectRatio: selectedAspectRatio,
-        referenceImage: refImageBase64List.length === 1 ? refImageBase64List[0] : refImageBase64List,
+        referenceImages: refImageBase64List,
         referenceImageMeta: refImageMetaList.length > 0 ? refImageMetaList : undefined,
       };
 

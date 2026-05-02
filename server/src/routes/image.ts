@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { generateImage, submitWanxTask, waitForWanxTask } from '../services/imageGen.js';
+import { generateImage, submitWanxTask, waitForWanxTask } from '../services/imageGen/index.js';
 import { createApiConfig } from '../services/apiClients.js';
 
 const router = Router();
@@ -74,10 +74,18 @@ router.post('/generate', async (req, res) => {
   res.setTimeout(0);
   
   try {
-    const { prompt, provider, model, referenceImage, referenceImageMeta, aspectRatio, size } = req.body;
+    const { prompt, provider, model, referenceImage, referenceImages: refImages, referenceImageMeta, aspectRatio, size } = req.body;
     
     if (!prompt) {
       return res.status(400).json({ error: '缺少提示词' });
+    }
+
+    // 归一化：优先使用新字段名 referenceImages，兼容旧字段名 referenceImage
+    let referenceImages: string[] | undefined;
+    if (refImages) {
+      referenceImages = Array.isArray(refImages) ? refImages : [refImages];
+    } else if (referenceImage) {
+      referenceImages = Array.isArray(referenceImage) ? referenceImage : [referenceImage];
     }
 
     const config = provider 
@@ -86,7 +94,7 @@ router.post('/generate', async (req, res) => {
 
     const imageUrl = await generateImage({
       prompt,
-      referenceImage,
+      referenceImages,
       referenceImageMeta,
       aspectRatio,
       size,

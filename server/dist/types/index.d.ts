@@ -78,17 +78,46 @@ export interface StoryboardScene {
     transition?: string;
     shots: Shot[];
 }
+/**
+ * 图片生成统一参数
+ *
+ * 生成模式由参数组合自动推断:
+ *   - 文生图: 仅 prompt
+ *   - 图生图: prompt + referenceImages (单张)
+ *   - 多图生图: prompt + referenceImages (多张)
+ *
+ * 各提供商参考图片格式转换:
+ *   - 火山方舟: referenceImages → requestBody.images (顶级数组)
+ *   - OpenRouter: referenceImages → messages[].content 中 image_url 对象 (vision格式)
+ *   - Grsai: referenceImages → requestBody.urls (顶级数组)
+ *   - 通义万相: 不支持参考图
+ */
 export interface ImageGenParams {
     prompt: string;
-    referenceImage?: string | string[];
+    referenceImages?: string[];
     referenceImageMeta?: {
         fileName: string;
         filePath: string;
     }[];
     aspectRatio?: string;
-    model?: string;
+    resolution?: string;
     size?: string;
+    model?: string;
 }
+/**
+ * 视频生成统一参数
+ *
+ * 生成模式由参数组合自动推断:
+ *   - 文生视频: 仅 prompt
+ *   - 图生视频(首帧): prompt + firstFrameImage
+ *   - 图生视频(首尾帧): prompt + firstFrameImage + lastFrameImage
+ *   - 多图生视频(参考): prompt + referenceImages
+ *
+ * 各提供商图片参数格式转换:
+ *   - 火山引擎: content 数组 + role 标记 (first_frame/last_frame/reference_image)
+ *   - OpenRouter/Wan: frame_images[] (含 frame_type) 或 input_references[]
+ *   - GRSai: url 字段 (仅单张首帧)
+ */
 export interface VideoGenParams {
     prompt: string;
     firstFrameImage?: string;
@@ -169,4 +198,5 @@ export interface RequestLog {
     requestBody?: Record<string, any>;
     responseBody?: Record<string, any>;
     aiApiCalls?: AIApiCall[];
+    connectionInterrupted?: boolean;
 }

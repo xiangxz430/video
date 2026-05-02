@@ -37,6 +37,10 @@ export const config = {
             apiKey: process.env.TOKENPLAN_API_KEY || '',
             baseUrl: process.env.TOKENPLAN_BASE_URL || 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
         },
+        dashscope: {
+            apiKey: process.env.DASHSCOPE_API_KEY || '',
+            baseUrl: process.env.DASHSCOPE_BASE_URL || 'https://dashscope.aliyuncs.com/api/v1',
+        },
     }
 };
 // 根据 provider 名称获取配置的辅助函数

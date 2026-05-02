@@ -92,19 +92,44 @@ export interface StoryboardScene {
   shots: Shot[];
 }
 
-// ========== 图片生成参数 ==========
-
+/**
+ * 图片生成统一参数
+ * 
+ * 生成模式由参数组合自动推断:
+ *   - 文生图: 仅 prompt
+ *   - 图生图: prompt + referenceImages (单张)
+ *   - 多图生图: prompt + referenceImages (多张)
+ * 
+ * 各提供商参考图片格式转换:
+ *   - 火山方舟: referenceImages → requestBody.images (顶级数组)
+ *   - OpenRouter: referenceImages → messages[].content 中 image_url 对象 (vision格式)
+ *   - Grsai: referenceImages → requestBody.urls (顶级数组)
+ *   - 通义万相: 不支持参考图
+ */
 export interface ImageGenParams {
-  prompt: string;
-  referenceImage?: string | string[];
-  referenceImageMeta?: { fileName: string; filePath: string }[];
-  aspectRatio?: string;
-  model?: string;
-  size?: string;
+  prompt: string;                    // 提示词（必需）
+  referenceImages?: string[];        // 参考图片数组 (URL 或 base64)，空/无 = 文生图
+  referenceImageMeta?: { fileName: string; filePath: string }[];  // 参考图元数据（日志用）
+  aspectRatio?: string;              // 宽高比: "16:9" | "9:16" | "1:1" | "4:3" | "3:4"
+  resolution?: string;              // 分辨率: "1K" | "2K" | "4K"
+  size?: string;                    // 精确像素尺寸 "WIDTHxHEIGHT"，与 resolution+aspectRatio 互斥
+  model?: string;                   // 模型名称
 }
 
-// ========== 视频生成参数 ==========
-
+/**
+ * 视频生成统一参数
+ * 
+ * 生成模式由参数组合自动推断:
+ *   - 文生视频: 仅 prompt
+ *   - 图生视频(首帧): prompt + firstFrameImage
+ *   - 图生视频(首尾帧): prompt + firstFrameImage + lastFrameImage
+ *   - 多图生视频(参考): prompt + referenceImages
+ * 
+ * 各提供商图片参数格式转换:
+ *   - 火山引擎: content 数组 + role 标记 (first_frame/last_frame/reference_image)
+ *   - OpenRouter/Wan: frame_images[] (含 frame_type) 或 input_references[]
+ *   - GRSai: url 字段 (仅单张首帧)
+ */
 export interface VideoGenParams {
   prompt: string;
   firstFrameImage?: string;
@@ -193,4 +218,5 @@ export interface RequestLog {
   requestBody?: Record<string, any>;    // 完整请求体（脱敏后）
   responseBody?: Record<string, any>;   // 完整响应体
   aiApiCalls?: AIApiCall[];             // AI API调用详情列表
+  connectionInterrupted?: boolean;       // 连接中断标记（客户端超时/断开等）
 }

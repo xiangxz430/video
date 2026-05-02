@@ -263,7 +263,8 @@ async function serverSSE<T>(
     onProgress?: (data: any) => void;
     onContent?: (chunk: string) => void;
     onError?: (error: string) => void;
-  }
+  },
+  timeoutMs?: number
 ): Promise<T> {
   const { serverUrl, apiKey } = await getServerConfig();
 
@@ -272,7 +273,7 @@ async function serverSSE<T>(
   }
 
   const url = buildApiUrl(serverUrl, endpoint);
-  return fetchSSE<T>(url, body, apiKey, callbacks, DEFAULT_TIMEOUT);
+  return fetchSSE<T>(url, body, apiKey, callbacks, timeoutMs ?? DEFAULT_TIMEOUT);
 }
 
 // ========== 脚本相关 API ==========
@@ -356,7 +357,7 @@ export interface GenerateImageParams {
   prompt: string;
   provider?: string;
   model?: string;
-  referenceImage?: string | string[];
+  referenceImages?: string[];
   /** 参考图元数据（仅用于日志，不参与 AI 调用） */
   referenceImageMeta?: { fileName: string; filePath: string }[];
   aspectRatio?: string;
@@ -417,11 +418,14 @@ export interface GenerateVideoParams {
   providerOptions?: Record<string, any>;  // Provider 特定透传参数
 }
 
+// 视频生成专属超时：12分钟，需大于服务端轮询上限（10分钟）
+const VIDEO_TIMEOUT = 720_000;
+
 export async function generateVideo(
   params: GenerateVideoParams,
   onProgress?: (data: any) => void
 ): Promise<string> {
-  const result = await serverSSE<{ videoUrl: string }>('/api/video/generate', params, { onProgress });
+  const result = await serverSSE<{ videoUrl: string }>('/api/video/generate', params, { onProgress }, VIDEO_TIMEOUT);
   return result?.videoUrl || '';
 }
 

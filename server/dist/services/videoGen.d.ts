@@ -21,3 +21,5 @@ export declare function generateVideoFromText(prompt: string, config: ApiConfig)
 export declare function generateVideoFromImage(prompt: string, firstFrameImage: string, config: ApiConfig): Promise<string>;
 export declare function generateVideoFromFirstLastFrame(prompt: string, firstFrameImage: string, lastFrameImage: string, config: ApiConfig): Promise<string>;
 export declare function generateVideoFromReferenceImages(prompt: string, referenceImages: string[], config: ApiConfig): Promise<string>;
+export declare function generateVideoWithDashScope(params: VideoGenParams, config: ApiConfig, onProgress?: (status: string) => void): Promise<string>;
+export declare function waitForDashScopeVideo(taskId: string, apiKey: string, baseUrl: string, maxWaitMs?: number, onProgress?: (status: string) => void): Promise<string>;

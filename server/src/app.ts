@@ -99,11 +99,11 @@ async function startServer() {
     console.log(`Health check: http://localhost:${config.port}/api/health`);
   });
 
-  // 设置请求超时为5分钟（图片/视频生成耗时长）
-  server.timeout = 300_000;
-  server.requestTimeout = 300_000;
-  server.headersTimeout = 310_000;
-  server.keepAliveTimeout = 310_000;
+  // 设置请求超时为12分钟（视频生成轮询最长10分钟，需留足缓冲）
+  server.timeout = 720_000;
+  server.requestTimeout = 720_000;
+  server.headersTimeout = 730_000;
+  server.keepAliveTimeout = 730_000;
 
   // 优雅关闭
   process.on('SIGTERM', async () => {

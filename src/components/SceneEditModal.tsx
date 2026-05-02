@@ -322,7 +322,7 @@ const SceneEditModal: React.FC<SceneEditModalProps> = ({ scene, onClose, onSave 
         model: selectedModel,
         size: selectedSize,
         aspectRatio: selectedAspectRatio,
-        referenceImage: refImageBase64List.length === 1 ? refImageBase64List[0] : refImageBase64List,
+        referenceImages: refImageBase64List,
         referenceImageMeta: refImageMetaList.length > 0 ? refImageMetaList : undefined,
       };
 

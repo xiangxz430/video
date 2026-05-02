@@ -17,7 +17,7 @@ export interface ImageGenParams {
   model?: string;
   size?: string;
   aspectRatio?: string;
-  referenceImage?: string | string[];
+  referenceImages?: string[];
   referenceImageMeta?: { fileName: string; filePath: string }[];
   provider?: string;
   style?: string;

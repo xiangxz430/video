@@ -35,6 +35,10 @@ export declare const config: {
             apiKey: string;
             baseUrl: string;
         };
+        dashscope: {
+            apiKey: string;
+            baseUrl: string;
+        };
     };
 };
 export declare function getProviderConfig(provider: string): any;

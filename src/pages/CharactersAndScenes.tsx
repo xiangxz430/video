@@ -208,7 +208,7 @@ const CharactersAndScenes: React.FC = () => {
             model: imageConfig?.model || ''
           };
           if (imageGenMode === 'image-ref' && char.imageUrl) {
-            params.referenceImage = char.imageUrl;
+            params.referenceImages = [char.imageUrl];
             params.referenceImageMeta = [{
               fileName: char.imageUrl.split('/').pop() || char.imageUrl,
               filePath: char.imageUrl,
@@ -295,7 +295,7 @@ const CharactersAndScenes: React.FC = () => {
             model: imageConfig?.model || ''
           };
           if (imageGenMode === 'image-ref' && scene.imageUrl) {
-            params.referenceImage = scene.imageUrl;
+            params.referenceImages = [scene.imageUrl];
             params.referenceImageMeta = [{
               fileName: scene.imageUrl.split('/').pop() || scene.imageUrl,
               filePath: scene.imageUrl,

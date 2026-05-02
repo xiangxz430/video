@@ -1,376 +1,36 @@
 /**
- * AI 图片生成模块
- * 包含通义万相、火山方舟 Seedream、OpenRouter、Grsai 等图片生成功能
+ * Grsai 图片生成服务
+ * 
+ * API 端点: 
+ *   提交: POST {baseUrl}/v1/draw/nano-banana
+ *   查询: GET  {baseUrl}/v1/draw/result?taskId={id}
+ * 认证方式: Bearer Token (Grsai API Key)
+ * 任务模式: 流式 (EventStream) + 轮询双模式
+ * 
+ * 参考图片格式 (顶级 urls 数组):
+ *   requestBody.urls = ["https://...", "data:image/jpeg;base64,..."]
+ * 
+ * 流式模式: 通过 EventStream 实时接收进度和结果，超时 300 秒
+ * 轮询模式: 提交任务后轮询 /v1/draw/result，最多 60 次，间隔 2 秒
+ * 
+ * 响应取值 (多格式兼容，按优先级):
+ *   1. data.results[0].(url|content|image_url)
+ *   2. data.url / data.content
+ *   3. data.data.url / data.data.results[0].(url|content)
+ * 
+ * 注意:
+ *   - 不要与火山方舟的 requestBody.images 或 OpenRouter 的 vision 格式混淆
+ *   - 流式模式下需检查 drawData.error 字段判断业务错误
+ *   - 轮询模式下 status 字段为 succeeded/failed
  */
-import type { ApiConfig, ImageGenParams } from '../types/index.js';
-import { getProviderConfig } from '../config/index.js';
-import { recordAICall, sanitizeAICallBody } from './logContext.js';
-
-// ========== 通义万相 - 图片生成 ==========
-
-interface WanxResponse {
-  output: {
-    task_id: string;
-    task_status: string;
-    results?: Array<{
-      url: string;
-    }>;
-  };
-}
-
-export async function submitWanxTask(config: ApiConfig, prompt: string): Promise<string> {
-  const baseUrl = config.baseUrl || 'https://dashscope.aliyuncs.com/api/v1';
-  const model = config.model || 'wanx-v1';
-  const endpoint = `${baseUrl}/services/aigc/text2image/image-synthesis`;
-  const startTime = Date.now();
-  
-  try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.apiKey}`,
-        'Content-Type': 'application/json',
-        'X-DashScope-Async': 'enable'
-      },
-      body: JSON.stringify({
-        model,
-        input: { prompt },
-        parameters: {
-          size: '768*1024',
-          n: 1,
-          style: '<auto>'
-        }
-      })
-    });
-    
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`图片生成任务提交失败 (${response.status}): ${errText}`);
-    }
-    
-    const data = await response.json() as WanxResponse;
-    const taskId = data.output.task_id;
-    
-    const reqBody = { model, input: { prompt }, parameters: { size: '768*1024', n: 1, style: '<auto>' } };
-    recordAICall({
-      provider: 'qwen',
-      model,
-      endpoint,
-      requestTime: Date.now() - startTime,
-      status: 'success',
-      taskId,
-      requestBody: sanitizeAICallBody(reqBody),
-      responseBody: sanitizeAICallBody({ taskId, taskStatus: data.output.task_status }),
-    });
-    
-    return taskId;
-  } catch (error: any) {
-    const reqBody = { model, input: { prompt }, parameters: { size: '768*1024', n: 1, style: '<auto>' } };
-    recordAICall({
-      provider: 'qwen',
-      model,
-      endpoint,
-      requestTime: Date.now() - startTime,
-      status: 'failed',
-      errorMessage: error.message || '未知错误',
-      requestBody: sanitizeAICallBody(reqBody),
-    });
-    throw error;
-  }
-}
-
-async function queryWanxTask(config: ApiConfig, taskId: string): Promise<string | null> {
-  const baseUrl = config.baseUrl || 'https://dashscope.aliyuncs.com/api/v1';
-  
-  const response = await fetch(`${baseUrl}/tasks/${taskId}`, {
-    method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${config.apiKey}`
-    }
-  });
-  
-  if (!response.ok) {
-    throw new Error(`查询任务失败 (${response.status})`);
-  }
-  
-  const data = await response.json() as WanxResponse;
-  
-  if (data.output.task_status === 'SUCCEEDED') {
-    return data.output.results?.[0]?.url || null;
-  } else if (data.output.task_status === 'FAILED') {
-    throw new Error('图片生成失败');
-  }
-  
-  return null;
-}
-
-export async function waitForWanxTask(config: ApiConfig, taskId: string, maxRetries = 30): Promise<string> {
-  const startTime = Date.now();
-  const baseUrl = config.baseUrl || 'https://dashscope.aliyuncs.com/api/v1';
-  
-  for (let i = 0; i < maxRetries; i++) {
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    
-    const url = await queryWanxTask(config, taskId);
-    if (url) {
-      recordAICall({
-        provider: 'qwen',
-        model: config.model || 'wanx-v1',
-        endpoint: `${baseUrl}/tasks/${taskId}`,
-        requestTime: Date.now() - startTime,
-        status: 'success',
-        pollAttempts: i + 1,
-        taskId,
-        responseBody: sanitizeAICallBody({ imageUrl: url }),
-      });
-      return url;
-    }
-  }
-  
-  recordAICall({
-    provider: 'qwen',
-    model: config.model || 'wanx-v1',
-    endpoint: `${baseUrl}/tasks/${taskId}`,
-    requestTime: Date.now() - startTime,
-    status: 'timeout',
-    pollAttempts: maxRetries,
-    taskId,
-    responseBody: sanitizeAICallBody({ maxRetries }),
-  });
-  
-  throw new Error('图片生成超时');
-}
-
-// ========== 火山方舟 Seedream - 图片生成 ==========
-
-async function callVolcImageAPI(config: ApiConfig, path: string, method: string, body: string): Promise<any> {
-  const baseUrl = config.baseUrl || 'https://ark.cn-beijing.volces.com/api/v3';
-  
-  const response = await fetch(`${baseUrl}${path}`, {
-    method,
-    headers: {
-      'Authorization': `Bearer ${config.apiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: method !== 'GET' ? body : undefined
-  });
-  
-  if (!response.ok) {
-    const errText = await response.text();
-    
-    let errorMessage = `火山方舟 API 请求失败 (${response.status}): ${errText}`;
-    try {
-      const errorData = JSON.parse(errText);
-      const errorCode = errorData.error?.code;
-      const errorMsg = errorData.error?.message;
-      
-      if (errorCode === 'InputImageSensitiveContentDetected') {
-        errorMessage = `参考图片包含敏感内容，火山方舟拒绝处理。\n\n错误详情：${errorMsg}\n\n建议：\n1. 更换参考图片，避免包含暴力、色情、政治敏感等内容\n2. 尝试使用其他图片生成模型（如 Grsai 或 OpenRouter）`;
-      } else if (errorCode) {
-        errorMessage = `火山方舟错误 (${errorCode}): ${errorMsg}`;
-      }
-    } catch (e) {
-      // 如果解析失败，使用原始错误信息
-    }
-    
-    throw new Error(errorMessage);
-  }
-  
-  return await response.json();
-}
-
-async function generateVolcImage(params: ImageGenParams, config: ApiConfig): Promise<string> {
-  const startTime = Date.now();
-  const model = params.model || config.model || 'doubao-seedream-5-0-260128';
-  const baseUrl = config.baseUrl || 'https://ark.cn-beijing.volces.com/api/v3';
-  const endpoint = `${baseUrl}/images/generations`;
-  
-  const requestBody: any = {
-    model,
-    prompt: params.prompt,
-    response_format: 'url'
-  };
-  
-  if (params.referenceImage) {
-    const images = Array.isArray(params.referenceImage) ? params.referenceImage : [params.referenceImage];
-    
-    const validImages = images.filter(img => 
-      img.startsWith('http://') || 
-      img.startsWith('https://') || 
-      img.startsWith('data:image/')
-    );
-    
-    if (validImages.length > 0) {
-      requestBody.image = validImages.length === 1 ? validImages[0] : validImages;
-      console.log('火山方舟图生图模式，参考图片数:', validImages.length);
-    } else {
-      console.warn('⚠️ 参考图片格式无效，将使用文生图模式');
-    }
-  }
-  
-  if (params.size) {
-    if (params.size.toLowerCase() === '1k') {
-      requestBody.size = '2k';
-      console.log('⚠️ 1K 分辨率不满足最小像素要求，自动升级到 2K');
-    } else {
-      requestBody.size = params.size;
-    }
-  } else if (params.aspectRatio) {
-    const ratioMap: Record<string, string> = {
-      '16:9': '2560x1440',
-      '9:16': '1440x2560',
-      '1:1': '1920x1920',
-      '4:3': '2400x1800',
-      '3:4': '1800x2400'
-    };
-    const size = ratioMap[params.aspectRatio];
-    if (size) {
-      requestBody.size = size;
-    } else {
-      requestBody.size = '2k';
-    }
-  } else {
-    requestBody.size = '2k';
-    console.log('⚠️ 未指定分辨率，默认使用 2K');
-  }
-  
-  console.log('火山方舟图片生成请求:', JSON.stringify(requestBody, null, 2));
-  
-  const data = await callVolcImageAPI(
-    config,
-    '/images/generations',
-    'POST',
-    JSON.stringify(requestBody)
-  );
-  
-  if (data.data && data.data.length > 0 && data.data[0].url) {
-    console.log('火山方舟图片生成成功，URL:', data.data[0].url);
-    recordAICall({
-      provider: 'volcengine',
-      model,
-      endpoint,
-      requestTime: Date.now() - startTime,
-      status: 'success',
-      requestBody: sanitizeAICallBody(requestBody),
-      responseBody: sanitizeAICallBody({ imageUrl: data.data[0].url }),
-    });
-    return data.data[0].url;
-  }
-  
-  recordAICall({
-    provider: 'volcengine',
-    model,
-    endpoint,
-    requestTime: Date.now() - startTime,
-    status: 'failed',
-    errorMessage: '图片生成失败：响应中未找到图片 URL',
-    requestBody: sanitizeAICallBody(requestBody),
-  });
-  throw new Error('图片生成失败：响应中未找到图片 URL');
-}
-
-export async function generateImageWithVolcEngine(
-  params: ImageGenParams,
-  config: ApiConfig
-): Promise<string> {
-  return await generateImage(params, config);
-}
-
-// ========== OpenRouter 图片生成 ==========
-
-export async function generateImageWithOpenRouter(
-  params: ImageGenParams,
-  config: ApiConfig
-): Promise<string> {
-  const { prompt, aspectRatio, size } = params;
-  const model = config.model || 'black-forest-labs/flux.2-pro';
-  const baseUrl = config.baseUrl || 'https://openrouter.ai/api/v1';
-  const endpoint = `${baseUrl}/chat/completions`;
-  const startTime = Date.now();
-  
-  console.log('OpenRouter 图片生成请求:', { model, promptLength: prompt.length });
-  
-  const requestBody: any = {
-    model: model,
-    messages: [
-      {
-        role: 'user',
-        content: prompt
-      }
-    ],
-    modalities: ['image']
-  };
-  
-  if (aspectRatio || size) {
-    requestBody.image_config = {};
-    if (aspectRatio) {
-      requestBody.image_config.aspect_ratio = aspectRatio;
-    }
-    if (size) {
-      requestBody.image_config.image_size = size;
-    }
-  }
-  
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.apiKey}`,
-      'HTTP-Referer': 'https://video-generator.app',
-      'X-Title': 'Video Generator'
-    },
-    body: JSON.stringify(requestBody)
-  });
-  
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OpenRouter API 请求失败: ${response.status} ${errorText}`);
-  }
-  
-  const result = await response.json();
-  console.log('OpenRouter 图片生成结果:', result);
-  
-  if (result.error) {
-    throw new Error(`OpenRouter 错误: ${result.error.message || JSON.stringify(result.error)}`);
-  }
-  
-  if (result.choices?.[0]?.message?.images && result.choices[0].message.images.length > 0) {
-    const imageUrl = result.choices[0].message.images[0]?.image_url?.url;
-    if (imageUrl) {
-      console.log('OpenRouter 图片生成成功');
-      recordAICall({
-        provider: 'openrouter',
-        model,
-        endpoint,
-        requestTime: Date.now() - startTime,
-        status: 'success',
-        requestBody: sanitizeAICallBody({ model, prompt: prompt.slice(0, 200), modalities: ['image'] }),
-        responseBody: sanitizeAICallBody({ hasImage: true }),
-      });
-      return imageUrl;
-    }
-  }
-  
-  recordAICall({
-    provider: 'openrouter',
-    model,
-    endpoint,
-    requestTime: Date.now() - startTime,
-    status: 'failed',
-    errorMessage: 'OpenRouter 返回格式错误,未找到生成的图片',
-    requestBody: sanitizeAICallBody({ model, prompt: prompt.slice(0, 200), modalities: ['image'] }),
-  });
-  throw new Error('OpenRouter 返回格式错误,未找到生成的图片');
-}
-
-// ========== Grsai 图片生成 ==========
+import { recordAICall, sanitizeAICallBody } from '../logContext.js';
 
 interface GrsaiImageParams {
   prompt: string;
   model?: string;
   size?: string;
   aspectRatio?: string;
-  referenceImage?: string | string[];
+  referenceImages?: string[];
   useStream?: boolean;
   onProgress?: (progress: number) => void;
 }
@@ -380,7 +40,7 @@ export async function generateImageWithGrsai(
   apiKey: string,
   baseUrl: string = 'https://grsai.dakka.com.cn'
 ): Promise<string> {
-  const { prompt, model = 'nano-banana-fast', size = '2K', aspectRatio = 'auto', referenceImage, useStream = true, onProgress } = params;
+  const { prompt, model = 'nano-banana-fast', size = '2K', aspectRatio = 'auto', referenceImages, useStream = true, onProgress } = params;
   console.log('Grsai 图片生成请求:', { model, promptLength: prompt.length, size, aspectRatio, useStream, baseUrl });
   
   const requestBody: any = {
@@ -391,8 +51,8 @@ export async function generateImageWithGrsai(
     shutProgress: false
   };
   
-  if (referenceImage) {
-    requestBody.urls = Array.isArray(referenceImage) ? referenceImage : [referenceImage];
+  if (referenceImages?.length) {
+    requestBody.urls = referenceImages;
   }
   
   const apiEndpoint = `${baseUrl}/v1/draw/nano-banana`;
@@ -480,7 +140,7 @@ export async function generateImageWithGrsai(
                     endpoint: apiEndpoint,
                     requestTime: Date.now() - startTime,
                     status: 'success',
-                    requestBody: sanitizeAICallBody({ model, prompt, aspectRatio, imageSize: size, hasReferenceImage: !!referenceImage }),
+                    requestBody: sanitizeAICallBody({ model, prompt, aspectRatio, imageSize: size, hasReferenceImages: !!referenceImages }),
                     responseBody: sanitizeAICallBody({ imageUrl }),
                   });
                   return imageUrl;
@@ -783,38 +443,4 @@ export async function getGrsaiResult(
     failureReason: result.failure_reason,
     error: result.error
   };
-}
-
-// ========== 统一的图片生成 API ==========
-
-export async function generateImage(
-  params: ImageGenParams,
-  config: ApiConfig
-): Promise<string> {
-  const provider = config.provider?.toLowerCase() || '';
-  
-  if (provider === 'grsai') {
-    console.log('使用 Grsai 图片生成...');
-    if (!config.apiKey) {
-      throw new Error('Grsai API 密钥未配置');
-    }
-    return await generateImageWithGrsai({
-      prompt: params.prompt,
-      model: config.model || 'nano-banana-fast',
-      size: params.size || '2K',
-      aspectRatio: params.aspectRatio || 'auto',
-      referenceImage: params.referenceImage
-    }, config.apiKey);
-  }
-  
-  if (provider === 'openrouter') {
-    console.log('使用 OpenRouter 图片生成...');
-    if (!config.apiKey) {
-      throw new Error('OpenRouter API 密钥未配置');
-    }
-    return await generateImageWithOpenRouter(params, config);
-  }
-  
-  console.log('使用火山方舟图片生成...');
-  return await generateVolcImage(params, config);
 }

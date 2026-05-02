@@ -13,7 +13,6 @@ export declare function queryVolcVideoTask(taskId: string, config: ApiConfig): P
 }>;
 export declare function waitForVolcVideo(taskId: string, config: ApiConfig, maxRetries?: number, intervalMs?: number, onProgress?: (status: string, attempt: number) => void): Promise<string>;
 export declare function generateVideoWithVolcEngine(params: VideoGenParams, config: ApiConfig): Promise<string>;
-export declare function generateVideoWithGRSai(params: VideoGenParams, config: ApiConfig, onProgress?: (progress: number) => void): Promise<string>;
 export declare function generateVideoWithWan26(params: VideoGenParams, config: ApiConfig, onProgress?: (status: string) => void): Promise<string>;
 export declare function generateVideoWithOpenRouter(params: VideoGenParams, config: ApiConfig, onProgress?: (status: string) => void): Promise<string>;
 export declare function generateVideo(params: VideoGenParams, config: ApiConfig, onProgress?: (progress: number | string) => void): Promise<string>;

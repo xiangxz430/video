@@ -5,7 +5,7 @@
  *   - 'grsai'                            → Grsai (流式+轮询)
  *   - 'openrouter'                       → OpenRouter (chat/completions + vision)
  *   - 'dashscope'/'alibaba'/'bailian'    → 阿里百炼 Wan2.7-Image (同步)
- *   - 'tokenplan'                        → 百炼TokenPlan (同 Wan2.7-Image，包月路由)
+ *   - 'tokenplan'                        → TokenPlan (OpenAI-compatible /images/generations)
  *   - 默认                               → 火山方舟 Seedream (同步)
  *
  * 各提供商实现已隔离到独立文件，修改某个提供商时
@@ -17,3 +17,4 @@ export { generateImageWithOpenRouter } from './openRouter.js';
 export { generateImageWithVolcEngine, generateVolcImage } from './volcEngine.js';
 export { generateImageWithGrsai, getGrsaiResult } from './grsai.js';
 export { generateWanxImage, submitWanxTask, waitForWanxTask } from './wanx.js';
+export { generateTokenPlanImage } from './tokenPlan.js';

@@ -10,6 +10,9 @@ const SEEDANCE_MODEL_MAP = {
 };
 // POST /api/video/generate - SSE 流式生成视频
 router.post('/generate', async (req, res) => {
+    // 禁用 socket 超时，允许长耗时视频生成
+    req.setTimeout(0);
+    res.setTimeout(0);
     // 设置 SSE 响应头
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -87,7 +90,7 @@ router.post('/generate', async (req, res) => {
             res.end();
         }
         else {
-            // 其他 provider（GRSai, OpenRouter）使用带进度回调的生成
+            // 其他 provider（OpenRouter）使用带进度回调的生成
             const onProgress = (progress) => {
                 const progressValue = typeof progress === 'number' ? progress : 0;
                 const status = typeof progress === 'string' ? progress : 'processing';

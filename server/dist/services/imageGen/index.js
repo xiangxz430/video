@@ -2,6 +2,7 @@ import { generateImageWithGrsai } from './grsai.js';
 import { generateImageWithOpenRouter } from './openRouter.js';
 import { generateVolcImage } from './volcEngine.js';
 import { generateWanxImage } from './wanx.js';
+import { generateTokenPlanImage } from './tokenPlan.js';
 export async function generateImage(params, config) {
     const provider = config.provider?.toLowerCase() || '';
     if (provider === 'grsai') {
@@ -24,8 +25,16 @@ export async function generateImage(params, config) {
         }
         return await generateImageWithOpenRouter(params, config);
     }
-    // 阿里百炼 / DashScope / Wan2.7-Image（含 TokenPlan 包月路由）
-    if (provider === 'dashscope' || provider === 'alibaba' || provider === 'bailian' || provider === 'tokenplan') {
+    // 百炼 TokenPlan 包月（OpenAI-compatible 图片生成，独立于 DashScope 原生 API）
+    if (provider === 'tokenplan') {
+        console.log('使用 TokenPlan 图片生成...');
+        if (!config.apiKey) {
+            throw new Error('TokenPlan API 密钥未配置');
+        }
+        return await generateTokenPlanImage(config, params);
+    }
+    // 阿里百炼 / DashScope / Wan2.7-Image
+    if (provider === 'dashscope' || provider === 'alibaba' || provider === 'bailian') {
         console.log('使用阿里百炼 Wan2.7-Image 图片生成...');
         if (!config.apiKey) {
             throw new Error('阿里百炼 API 密钥未配置');
@@ -40,3 +49,4 @@ export { generateImageWithOpenRouter } from './openRouter.js';
 export { generateImageWithVolcEngine, generateVolcImage } from './volcEngine.js';
 export { generateImageWithGrsai, getGrsaiResult } from './grsai.js';
 export { generateWanxImage, submitWanxTask, waitForWanxTask } from './wanx.js';
+export { generateTokenPlanImage } from './tokenPlan.js';

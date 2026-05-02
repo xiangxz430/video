@@ -152,7 +152,7 @@ async function callOpenAICompatibleOnce(config, messages) {
         'Accept': 'application/json'
     };
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 300000);
+    const timeoutId = setTimeout(() => controller.abort(), 900000); // 15分钟
     const startTime = Date.now();
     try {
         console.log(`\n========== AI 调用开始 ==========`);
@@ -310,7 +310,7 @@ async function callOpenAIStreamingOnce(config, messages, onChunk) {
         'Accept': 'text/event-stream'
     };
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 300000);
+    const timeoutId = setTimeout(() => controller.abort(), 900000); // 15分钟
     const startTime = Date.now();
     try {
         console.log(`\n========== AI 流式调用开始 ==========`);

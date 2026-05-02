@@ -18,6 +18,13 @@ router.post('/split', async (req, res) => {
             res.end();
             return;
         }
+        // 剧本字数上限校验
+        const MAX_SCRIPT_LENGTH = 5000;
+        if (script.length > MAX_SCRIPT_LENGTH) {
+            res.write(`event: error\ndata: ${JSON.stringify({ message: `剧本内容过长（${script.length}字），请缩减至${MAX_SCRIPT_LENGTH}字以内` })}\n\n`);
+            res.end();
+            return;
+        }
         const config = provider
             ? createApiConfig(provider, model)
             : createApiConfig('deepseek');

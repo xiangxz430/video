@@ -207,6 +207,13 @@ const Outline: React.FC = () => {
   const handleSplit = async () => {
     if (!script || !currentScript?.id) return;
 
+    // 剧本字数上限校验
+    const MAX_SCRIPT_LENGTH = 5000;
+    if (script.length > MAX_SCRIPT_LENGTH) {
+      alert(`剧本内容过长（${script.length}字），请缩减至${MAX_SCRIPT_LENGTH}字以内后再拆分。过长的剧本会导致AI处理超时失败。`);
+      return;
+    }
+
     // 检查是否有已生成的图片
     const scriptId = currentScript.id;
     const existingCharacters = characters.filter(c => c.scriptId === scriptId);

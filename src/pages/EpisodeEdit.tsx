@@ -2076,12 +2076,6 @@ const EpisodeEdit: React.FC = () => {
       }
     }
     
-    // GRSai Sora API 仅支持单张参考图，自动截取第一张
-    const videoProvider = (videoConfig?.provider || '').toLowerCase();
-    if (videoProvider === 'grsai' && preparedReferenceImages && preparedReferenceImages.length > 1) {
-      console.log(`⚠️ GRSai Sora 仅支持单张参考图，已从 ${preparedReferenceImages.length} 张中保留第一张`);
-      preparedReferenceImages = [preparedReferenceImages[0]];
-    }
     
     // 收集首帧/尾帧预览图
     if (videoGenMode === 'first-frame' || videoGenMode === 'first-last-frame') {
@@ -2116,10 +2110,6 @@ const EpisodeEdit: React.FC = () => {
           videoGenMode === 'first-last-frame' ? '首尾帧模式' :
           videoGenMode === 'reference-image' ? '参考图模式' : '文生视频模式';
         
-        // GRSai 多参考图提示
-        if (videoProvider === 'grsai' && videoPreviewItems.length > 1) {
-          modeLabel += ' ⚠️GRSai仅支持单张参考图';
-        }
         
         setRefPreviewModal({
           show: true,

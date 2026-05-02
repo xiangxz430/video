@@ -5,75 +5,8 @@ import CharacterCard from '../components/CharacterCard';
 import SceneCard from '../components/SceneCard';
 import SceneEditModal from '../components/SceneEditModal';
 import CharacterEditModal from '../components/CharacterEditModal';
-import { generateImage, ImageGenParams, buildCharacterPrompt } from '../services/aiService';
-import { saveUrlImage, localPathToSrc } from '../services/fileService';
-import { getApiConfig, saveImageHistory, addGeneratedImageHistory } from '../services/database';
+import { localPathToSrc } from '../services/fileService';
 import type { Character, Scene } from '../types';
-
-// 图片生成模式
-type ImageGenMode = 'text' | 'image-ref';
-
-// 将 AI 拆分返回的结构化 JSON 描述转为自然语言图片 prompt
-// 同时截断过长的描述以避免超过图片 API 的 prompt 长度限制
-function descriptionToPrompt(description: string, maxLen: number = 500): string {
-  let result: string;
-  try {
-    const obj = JSON.parse(description);
-    if (typeof obj !== 'object' || obj === null) {
-      result = description;
-    } else if (obj['人物与服饰']) {
-      // 处理角色描述
-      const char = obj['人物与服饰'];
-      const parts: string[] = [];
-      if (char['基本信息']) parts.push(char['基本信息']);
-      if (char['面部特征']) parts.push('面部特征：' + char['面部特征']);
-      if (char['发型发色']) parts.push('发型发色：' + char['发型发色']);
-      if (char['服装穿着']) parts.push('服装：' + char['服装穿着']);
-      if (char['配饰道具']) parts.push('配饰：' + char['配饰道具']);
-      if (char['气质神态']) parts.push('气质神态：' + char['气质神态']);
-      if (char['姿态动作']) parts.push('姿态：' + char['姿态动作']);
-      if (obj['渲染精度']?.['画面表现']) {
-        parts.push('画质要求：' + obj['渲染精度']['画面表现']);
-      }
-      result = parts.join('；');
-    } else if (obj['场景与光效']) {
-      // 处理场景描述
-      const scene = obj['场景与光效'];
-      const parts: string[] = [];
-      if (scene['设计风格']) parts.push(scene['设计风格']);
-      if (scene['地点']) parts.push(scene['地点']);
-      if (scene['时间']) parts.push('时间：' + scene['时间']);
-      if (scene['环境光']) parts.push('光线：' + scene['环境光']);
-      if (scene['光影品质']) parts.push('光影：' + scene['光影品质']);
-      if (obj['渲染精度']?.['画面表现']) {
-        parts.push('画质要求：' + obj['渲染精度']['画面表现']);
-      }
-      result = parts.join('；');
-    } else {
-      // 无法识别结构，提取所有字符串值
-      const values: string[] = [];
-      for (const [key, val] of Object.entries(obj)) {
-        if (typeof val === 'string') values.push(val);
-        else if (typeof val === 'object' && val !== null) {
-          for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
-            if (typeof v === 'string' && v.length > 5) values.push(v);
-          }
-        }
-      }
-      result = values.length > 0 ? values.join('；') : description;
-    }
-  } catch {
-    result = description;
-  }
-  
-  // 截断保护：布局指令约 300 字符，描述控制在 maxLen 内，确保总 prompt ≤ 800
-  if (result.length > maxLen) {
-    const cutPoint = result.lastIndexOf('；', maxLen);
-    result = cutPoint > maxLen / 2 ? result.substring(0, cutPoint) : result.substring(0, maxLen);
-    console.log(`[descriptionToPrompt] 描述过长(${result.length}→${maxLen})，已截断`);
-  }
-  return result;
-}
 
 const CharactersAndScenes: React.FC = () => {
   const navigate = useNavigate();
@@ -94,10 +27,6 @@ const CharactersAndScenes: React.FC = () => {
   const [editingCharacter, setEditingCharacter] = useState<Character | null>(null);
   const [isAddingCharacter, setIsAddingCharacter] = useState(false);
   const [isAddingScene, setIsAddingScene] = useState(false);
-  const [batchGenerating, setBatchGenerating] = useState(false);
-  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
-  const [batchError, setBatchError] = useState('');
-  const [imageGenMode, setImageGenMode] = useState<ImageGenMode>('text');
 
   // 加载数据
   useEffect(() => {
@@ -179,172 +108,6 @@ const CharactersAndScenes: React.FC = () => {
     setIsAddingScene(false);
   };
 
-  // AI 批量生成角色图片
-  const handleBatchGenerateCharacters = async () => {
-    const ungenerated = characters.filter(c => !c.imageUrl);
-    if (ungenerated.length === 0) return;
-
-    setBatchError('');
-    setBatchGenerating(true);
-    setBatchProgress({ current: 0, total: ungenerated.length });
-
-    try {
-      const imageConfig = await getApiConfig('imageGeneration');
-      // 服务端代理架构：API Key 由服务端管理
-
-      for (let i = 0; i < ungenerated.length; i++) {
-        const char = ungenerated[i];
-        setBatchProgress({ current: i + 1, total: ungenerated.length });
-        try {
-          // 角色图提示词：先将 JSON 描述转为自然语言，再拼布局要求
-          const cleanDesc = descriptionToPrompt(char.description);
-          const characterPrompt = buildCharacterPrompt(cleanDesc);
-          console.log(`[角色] ${char.name} prompt长度: ${characterPrompt.length}, 原始描述长度: ${char.description.length}`);
-          
-          const params: ImageGenParams = { 
-            prompt: characterPrompt,
-            size: '2K',  // 默认使用 2K 分辨率
-            provider: imageConfig?.provider || 'volcengine',  // 透传用户在客户端配置的图片提供商
-            model: imageConfig?.model || ''
-          };
-          if (imageGenMode === 'image-ref' && char.imageUrl) {
-            params.referenceImages = [char.imageUrl];
-            params.referenceImageMeta = [{
-              fileName: char.imageUrl.split('/').pop() || char.imageUrl,
-              filePath: char.imageUrl,
-            }];
-          }
-          // 页面日志：显示当前生成进度
-          setBatchError(`🔄 正在为「${char.name}」生成图片...`);
-          const imageUrl = await generateImage(params);
-          console.log(`角色 ${char.name} 图片生成成功:`, imageUrl);
-          
-          try {
-            const localPath = await saveUrlImage(imageUrl, 'characters');
-            if (localPath && char.id) {
-              await updateCharacter(char.id, { imageUrl: localPath });
-              console.log(`角色 ${char.name} 图片保存成功:`, localPath);
-              
-              // 保存到图片历史
-              try {
-                await saveImageHistory('character', char.id, char.name, imageUrl, localPath, char.description);
-                console.log(`角色 ${char.name} 图片已保存到历史`);
-                // 也保存到统一历史
-                await addGeneratedImageHistory(localPath, char.description, imageConfig?.model || '', '2K', '16:9', 'character', char.id);
-              } catch (historyError) {
-                console.error(`角色 ${char.name} 保存图片历史失败:`, historyError);
-              }
-            }
-          } catch (saveError: any) {
-            console.error(`角色 ${char.name} 图片保存失败:`, saveError.message);
-            setBatchError(`⚠️ ${char.name} 图片保存失败: ${saveError.message}`);
-          }
-        } catch (err: any) {
-          const errMsg = err?.message || err?.toString() || '未知错误';
-          console.error(`Failed to generate image for ${char.name}:`, err);
-          setBatchError(`❌ ${char.name} 生成失败: ${errMsg}`);
-        }
-      }
-      
-      // 生成完成后刷新角色数据
-      if (currentScript?.id) {
-        await loadCharacters(currentScript.id);
-      }
-    } catch (err: any) {
-      setBatchError(err.message || '批量生成失败');
-    } finally {
-      setBatchGenerating(false);
-      setBatchProgress({ current: 0, total: 0 });
-    }
-  };
-
-  // AI 批量生成场景图片
-  const handleBatchGenerateScenes = async () => {
-    const ungenerated = scenes.filter(s => !s.imageUrl);
-    if (ungenerated.length === 0) return;
-
-    setBatchError('');
-    setBatchGenerating(true);
-    setBatchProgress({ current: 0, total: ungenerated.length });
-
-    try {
-      const imageConfig = await getApiConfig('imageGeneration');
-      // 服务端代理架构：API Key 由服务端管理
-
-      for (let i = 0; i < ungenerated.length; i++) {
-        const scene = ungenerated[i];
-        setBatchProgress({ current: i + 1, total: ungenerated.length });
-        try {
-          // 场景图提示词：先将 JSON 描述转为自然语言，再拼布局要求
-          const cleanSceneDesc = descriptionToPrompt(scene.description);
-          const scenePrompt = `电影级场景概念图，${cleanSceneDesc}。
-画面要求：
-1. 展现场景的全貌和空间层次感
-2. 清晰呈现建筑结构、环境布局、主要物体位置
-3. 光影效果自然，体现时间（白天/黄昏/夜晚）和天气特征
-4. 色彩基调统一，营造符合剧情的氛围
-5. 画面构图专业，具有电影画面的视觉张力
-【重要】画面中绝对不能出现任何人物、角色、人形生物，只展示纯粹的环境、建筑、自然景观
-风格：影视级场景概念图，高清细腻，透视准确，细节丰富，无人物`;
-          console.log(`[场景] ${scene.name} prompt长度: ${scenePrompt.length}, 原始描述长度: ${scene.description.length}`);
-          
-          const params: ImageGenParams = { 
-            prompt: scenePrompt,
-            size: '2K',  // 默认使用 2K 分辨率
-            provider: imageConfig?.provider || 'volcengine',  // 透传用户在客户端配置的图片提供商
-            model: imageConfig?.model || ''
-          };
-          if (imageGenMode === 'image-ref' && scene.imageUrl) {
-            params.referenceImages = [scene.imageUrl];
-            params.referenceImageMeta = [{
-              fileName: scene.imageUrl.split('/').pop() || scene.imageUrl,
-              filePath: scene.imageUrl,
-            }];
-          }
-          // 页面日志：显示当前生成进度
-          setBatchError(`🔄 正在为「${scene.name}」生成场景图...`);
-          const imageUrl = await generateImage(params);
-          console.log(`场景 ${scene.name} 图片生成成功:`, imageUrl);
-          
-          try {
-            const localPath = await saveUrlImage(imageUrl, 'scenes');
-            if (localPath && scene.id) {
-              await updateScene(scene.id, { imageUrl: localPath });
-              console.log(`场景 ${scene.name} 图片保存成功:`, localPath);
-              
-              // 保存到图片历史
-              try {
-                await saveImageHistory('scene', scene.id, scene.name, imageUrl, localPath, scene.description);
-                console.log(`场景 ${scene.name} 图片已保存到历史`);
-                // 也保存到统一历史
-                await addGeneratedImageHistory(localPath, scene.description, imageConfig?.model || '', '2K', '16:9', 'scene', scene.id);
-              } catch (historyError) {
-                console.error(`场景 ${scene.name} 保存图片历史失败:`, historyError);
-              }
-            }
-          } catch (saveError: any) {
-            console.error(`场景 ${scene.name} 图片保存失败:`, saveError.message);
-            setBatchError(`⚠️ ${scene.name} 场景图保存失败: ${saveError.message}`);
-          }
-        } catch (err: any) {
-          const errMsg = err?.message || err?.toString() || '未知错误';
-          console.error(`Failed to generate image for ${scene.name}:`, err);
-          setBatchError(`❌ ${scene.name} 场景图生成失败: ${errMsg}`);
-        }
-      }
-      
-      // 生成完成后刷新场景数据
-      if (currentScript?.id) {
-        await loadScenes(currentScript.id);
-      }
-    } catch (err: any) {
-      setBatchError(err.message || '批量生成失败');
-    } finally {
-      setBatchGenerating(false);
-      setBatchProgress({ current: 0, total: 0 });
-    }
-  };
-
   // 转换数据库数据为组件格式
   const formattedCharacters = characters.map(char => ({
     id: char.id || 0,
@@ -403,72 +166,16 @@ const CharactersAndScenes: React.FC = () => {
 
       {activeTab === 'characters' && (
         <>
-          {batchError && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-sm text-red-700">
-              {batchError}
-            </div>
-          )}
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <div className="flex items-center space-x-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-600" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                  </svg>
-                  <span className="text-sm text-yellow-800">
-                    {batchGenerating
-                      ? `正在生成第 ${batchProgress.current}/${batchProgress.total} 个...`
-                      : `有 ${formattedCharacters.filter(c => !c.isGenerated).length} 个形象未生成`}
-                  </span>
-                </div>
-                
-                {/* 图片生成模式选择 */}
-                <div className="flex items-center space-x-2">
-                  <span className="text-xs text-gray-500">生成模式:</span>
-                  <select
-                    value={imageGenMode}
-                    onChange={(e) => setImageGenMode(e.target.value as ImageGenMode)}
-                    className="px-2 py-1 border border-gray-300 rounded text-xs"
-                  >
-                    <option value="text">文生图</option>
-                    <option value="image-ref">图+文生图</option>
-                  </select>
-                </div>
-              </div>
-              <div className="flex items-center space-x-3">
-                <button
-                  onClick={handleAddCharacter}
-                  className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition flex items-center space-x-2"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
-                  </svg>
-                  <span>添加角色</span>
-                </button>
-                <button
-                  onClick={handleBatchGenerateCharacters}
-                  disabled={batchGenerating || formattedCharacters.filter(c => !c.isGenerated).length === 0}
-                  className="px-4 py-2 bg-black text-white text-sm rounded-lg hover:bg-gray-800 transition flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {batchGenerating ? (
-                    <>
-                      <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                      </svg>
-                      <span>生成中...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>AI 批量生成</span>
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 010-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zM12 2a1 1 0 01.967.744L14.146 7.2 17.5 9.134a1 1 0 010 1.732l-3.354 1.935-1.18 4.455a1 1 0 01-1.933 0L9.854 12.8 6.5 10.866a1 1 0 010-1.732l3.354-1.935 1.18-4.455A1 1 0 0112 2z" clipRule="evenodd" />
-                      </svg>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
+          <div className="flex items-center justify-end mb-4">
+            <button
+              onClick={handleAddCharacter}
+              className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition flex items-center space-x-2"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
+              </svg>
+              <span>添加角色</span>
+            </button>
           </div>
           <div className="grid grid-cols-5 gap-4">
             {formattedCharacters.map(character => (
@@ -487,57 +194,16 @@ const CharactersAndScenes: React.FC = () => {
 
       {activeTab === 'scenes' && (
         <>
-          {batchError && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-sm text-red-700">
-              {batchError}
-            </div>
-          )}
-          <div className="flex items-center justify-between mb-4">
-            {/* 图片生成模式选择 */}
-            <div className="flex items-center space-x-2">
-              <span className="text-xs text-gray-500">生成模式:</span>
-              <select
-                value={imageGenMode}
-                onChange={(e) => setImageGenMode(e.target.value as ImageGenMode)}
-                className="px-2 py-1 border border-gray-300 rounded text-xs"
-              >
-                <option value="text">文生图</option>
-                <option value="image-ref">图+文生图</option>
-              </select>
-            </div>
-            <div className="flex items-center space-x-3">
-              <button
-                onClick={handleAddScene}
-                className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition flex items-center space-x-2"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
-                </svg>
-                <span>添加场景</span>
-              </button>
-              <button
-                onClick={handleBatchGenerateScenes}
-                disabled={batchGenerating || scenes.filter(s => !s.imageUrl).length === 0}
-                className="px-4 py-2 bg-black text-white text-sm rounded-lg hover:bg-gray-800 transition flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {batchGenerating ? (
-                  <>
-                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                    </svg>
-                    <span>正在生成 {batchProgress.current}/{batchProgress.total}...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>AI 批量生成场景图</span>
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 010-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zM12 2a1 1 0 01.967.744L14.146 7.2 17.5 9.134a1 1 0 010 1.732l-3.354 1.935-1.18 4.455a1 1 0 01-1.933 0L9.854 12.8 6.5 10.866a1 1 0 010-1.732l3.354-1.935 1.18-4.455A1 1 0 0112 2z" clipRule="evenodd" />
-                    </svg>
-                  </>
-                )}
-              </button>
-            </div>
+          <div className="flex items-center justify-end mb-4">
+            <button
+              onClick={handleAddScene}
+              className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition flex items-center space-x-2"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
+              </svg>
+              <span>添加场景</span>
+            </button>
           </div>
           <div className="grid grid-cols-4 gap-4">
             {formattedScenes.map(scene => (

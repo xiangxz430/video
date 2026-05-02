@@ -240,7 +240,7 @@ async function callOpenAICompatibleOnce(
   };
   
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 300000);
+  const timeoutId = setTimeout(() => controller.abort(), 900000); // 15分钟
   const startTime = Date.now();
   
   try {
@@ -430,7 +430,7 @@ async function callOpenAIStreamingOnce(
   };
   
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 300000);
+  const timeoutId = setTimeout(() => controller.abort(), 900000); // 15分钟
   const startTime = Date.now();
   
   try {

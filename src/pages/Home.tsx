@@ -790,8 +790,8 @@ const Home: React.FC = () => {
                     if (model.resolutions && model.resolutions.length > 0) {
                       setSelectedVideoResolution(model.resolutions[model.resolutions.length - 1]);
                     }
-                    if ('durations' in model && Array.isArray((model as any).durations) && (model as any).durations.length > 0) {
-                      setSelectedVideoDuration((model as any).durations[0]);
+                    if (model.durations && model.durations.length > 0) {
+                      setSelectedVideoDuration(model.durations[0]);
                     }
                   }
                 }}
@@ -821,7 +821,7 @@ const Home: React.FC = () => {
                 onChange={(e) => setSelectedVideoDuration(Number(e.target.value))}
                 className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500"
               >
-                {((enabledVideoModels.find(m => m.id === selectedVideoModel) as any)?.durations || [5, 10]).map((dur: number) => (
+                {(enabledVideoModels.find(m => m.id === selectedVideoModel)?.durations || [5, 10]).map((dur: number) => (
                   <option key={dur} value={dur}>{dur}s</option>
                 ))}
               </select>

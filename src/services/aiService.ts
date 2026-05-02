@@ -94,10 +94,12 @@ export async function callOpenAIStreaming(config: any, messages: OpenAIMessage[]
 
 // ========== 图片生成（适配到服务端） ==========
 export async function generateImage(params: ImageGenParams, config?: any): Promise<string> {
+  // provider 优先使用 params.provider，回退到 config.provider（兼容旧调用方未传 provider 的情况）
+  const provider = params.provider || config?.provider;
   return serverGenerateImage({
     prompt: params.prompt,
     model: params.model,
-    provider: params.provider,
+    provider,
     referenceImages: params.referenceImages,
     referenceImageMeta: params.referenceImageMeta,
     aspectRatio: params.aspectRatio,
@@ -156,10 +158,6 @@ export async function generateVideo(params: VideoGenParams, config?: any, onProg
 
 // 兼容旧代码的其他视频生成函数
 export async function generateVideoWithVolcEngine(params: VideoGenParams, config: any): Promise<string> {
-  return generateVideo(params, config);
-}
-
-export async function generateVideoWithGRSai(params: VideoGenParams, config: any): Promise<string> {
   return generateVideo(params, config);
 }
 

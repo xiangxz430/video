@@ -92,7 +92,7 @@ export async function saveServerConfig(serverUrl: string, apiKey: string): Promi
 }
 
 // 默认超时时间
-const DEFAULT_TIMEOUT = 300_000;
+const DEFAULT_TIMEOUT = 900_000;
 
 // 基础请求封装（使用 fetch）
 async function serverFetch(endpoint: string, body: any, options?: { timeout?: number }): Promise<any> {

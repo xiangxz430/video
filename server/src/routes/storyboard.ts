@@ -6,6 +6,10 @@ const router = Router();
 
 // POST /api/storyboard/generate - SSE 流式生成分镜
 router.post('/generate', async (req, res) => {
+  // 禁用 socket 超时，允许长耗时分镜生成
+  req.setTimeout(0);
+  res.setTimeout(0);
+  
   // 设置 SSE 响应头
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');

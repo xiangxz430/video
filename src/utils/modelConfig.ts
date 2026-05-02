@@ -9,6 +9,7 @@ export interface ModelInfo {
   baseUrl?: string;
   resolutions?: string[]; // 图片模型专用
   formats?: string[]; // 图片模型专用
+  durations?: number[]; // 视频模型专用：支持的时长选项（秒），如 [5, 10] 或 [6, 10]
   price?: string; // 价格信息，如 "$0.04/张" 或 "¥0.08/张"
 }
 
@@ -66,9 +67,10 @@ export function getEnabledModels(
         modelInfo.price = getModelPrice(config.provider, modelId || modelName);
       }
       
-      // 为视频模型添加价格信息
+      // 为视频模型添加价格和时长信息
       if (capability === 'videoGeneration') {
         modelInfo.price = getModelPrice(config.provider, modelId || modelName);
+        modelInfo.durations = getModelDurations(config.provider, modelId || modelName);
       }
       
       models.push(modelInfo);
@@ -149,7 +151,6 @@ function getModelDisplayName(provider: string, modelId: string): string {
     'nano-banana-3': 'Nano-Banana-3 (Gemini 3.1 Flash)',
     'gpt-image-2': 'GPT-Image-2',
     'gpt-image-2-vip': 'GPT-Image-2-VIP',
-    'grsai-sora-2': 'Sora2',
     // DeepSeek
     'deepseek-v4-pro': 'DeepSeek-V4-Pro',
     'deepseek-chat': 'DeepSeek-Chat',
@@ -278,7 +279,6 @@ export function getModelDescription(provider: string, modelId: string): string {
       'nano-banana-3': 'Grsai-Gemini3.1',
       'gpt-image-2': 'Grsai-GPT图片',
       'gpt-image-2-vip': 'Grsai-GPT图片VIP',
-      'grsai-sora-2': 'Grsai-Sora2视频',
     };
     return grsaiDesc[modelId] || 'Grsai';
   }
@@ -352,6 +352,43 @@ export function getModelDescription(provider: string, modelId: string): string {
 }
 
 /**
+ * 获取视频模型支持的时长选项
+ * 不同视频模型支持的时长不同，必须与 API 实际支持的对齐
+ */
+export function getModelDurations(provider: string, modelId: string): number[] {
+  // 火山方舟
+  if (provider === 'volcengine') {
+    return [5, 10];
+  }
+
+  // DashScope (百炼直连)
+  if (provider === 'dashscope') {
+    return [5, 10];
+  }
+
+  // OpenRouter 视频模型
+  if (provider === 'openrouter') {
+    // Hailuo 2.3 仅支持 6s 和 10s
+    if (modelId.includes('hailuo')) {
+      return [6, 10];
+    }
+    // Sora 2 Pro 支持更长时长
+    if (modelId.includes('sora')) {
+      return [5, 10, 15, 20];
+    }
+    // Veo 3.1 默认 8s
+    if (modelId.includes('veo')) {
+      return [8];
+    }
+    // Kling / Seedance / Wan / MiniMax 等其他模型
+    return [5, 10];
+  }
+
+  // 默认
+  return [5, 10];
+}
+
+/**
  * 获取模型的价格信息
  */
 export function getModelPrice(provider: string, modelId: string): string | undefined {
@@ -383,7 +420,6 @@ export function getModelPrice(provider: string, modelId: string): string | undef
       'nano-banana-3': '¥0.04-0.08/张',
       'gpt-image-2': '¥0.15-0.30/张',
       'gpt-image-2-vip': '¥0.20-0.40/张',
-      'grsai-sora-2': '¥0.08/秒',
     };
     return grsaiPrice[modelId];
   }

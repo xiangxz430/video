@@ -334,8 +334,6 @@ async function initDefaultApiConfigs(): Promise<void> {
     { name: 'grsai_imageGeneration_nano-banana-3', provider: 'grsai', apiKey: 'sk-31428f6c42e242a7b0ac10581c4ed017', model: 'nano-banana-3', baseUrl: 'https://grsai.dakka.com.cn' },
     { name: 'grsai_imageGeneration_gpt-image-2', provider: 'grsai', apiKey: 'sk-31428f6c42e242a7b0ac10581c4ed017', model: 'gpt-image-2', baseUrl: 'https://grsai.dakka.com.cn' },
     { name: 'grsai_imageGeneration_gpt-image-2-vip', provider: 'grsai', apiKey: 'sk-31428f6c42e242a7b0ac10581c4ed017', model: 'gpt-image-2-vip', baseUrl: 'https://grsai.dakka.com.cn' },
-    // Grsai - 视频生成
-    { name: 'grsai_videoGeneration_grsai-sora-2', provider: 'grsai', apiKey: 'sk-31428f6c42e242a7b0ac10581c4ed017', model: 'grsai-sora-2', baseUrl: 'https://grsai.dakka.com.cn' },
     // DeepSeek
     { name: 'deepseek_scriptGeneration_deepseek-v4-pro', provider: 'deepseek', apiKey: 'sk-2b253d4e956642d8a100d94a4db56b11', model: 'deepseek-v4-pro', baseUrl: 'https://api.deepseek.com/v1' },
     { name: 'deepseek_scriptGeneration_deepseek-chat', provider: 'deepseek', apiKey: 'sk-2b253d4e956642d8a100d94a4db56b11', model: 'deepseek-chat', baseUrl: 'https://api.deepseek.com/v1' },

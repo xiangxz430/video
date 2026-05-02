@@ -37,10 +37,6 @@ export async function generateVideoWithVolcEngine(params: VideoGenParams, config
   throw new Error('generateVideoWithVolcEngine 已废弃，请使用 serverApiClient');
 }
 
-export async function generateVideoWithGRSai(params: VideoGenParams, config: any): Promise<string> {
-  throw new Error('generateVideoWithGRSai 已废弃，请使用 serverApiClient');
-}
-
 export async function generateVideoWithWan26(params: VideoGenParams, config: any): Promise<string> {
   throw new Error('generateVideoWithWan26 已废弃，请使用 serverApiClient');
 }

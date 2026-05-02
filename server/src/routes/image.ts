@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { generateImage, generateWanxImage } from '../services/imageGen/index.js';
+import { generateImage } from '../services/imageGen/index.js';
 import { createApiConfig } from '../services/apiClients.js';
 
 const router = Router();
@@ -123,12 +123,12 @@ router.post('/character', async (req, res) => {
 
     const prompt = buildCharacterPrompt(description, referenceMode);
     
-    // 角色图片使用 Wan2.7-Image
     const config = provider 
       ? createApiConfig(provider, model)
       : createApiConfig('dashscope', 'wan2.7-image');
 
-    const imageUrl = await generateWanxImage(config, { prompt });
+    // 通过统一入口路由（根据 provider 选择正确的 handler）
+    const imageUrl = await generateImage({ prompt }, config);
 
     res.json({ imageUrl });
   } catch (error: any) {
@@ -152,12 +152,12 @@ router.post('/scene', async (req, res) => {
 
     const prompt = buildScenePrompt(description, referenceMode);
     
-    // 场景图片使用 Wan2.7-Image
     const config = provider 
       ? createApiConfig(provider, model)
       : createApiConfig('dashscope', 'wan2.7-image');
 
-    const imageUrl = await generateWanxImage(config, { prompt });
+    // 通过统一入口路由（根据 provider 选择正确的 handler）
+    const imageUrl = await generateImage({ prompt }, config);
 
     res.json({ imageUrl });
   } catch (error: any) {

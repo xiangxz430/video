@@ -227,160 +227,6 @@ export async function generateVideoWithVolcEngine(
   }
 }
 
-// ========== GRSai 视频生成 (Sora2) ==========
-
-interface GRSaiVideoResult {
-  id: string;
-  results?: Array<{ url: string; removeWatermark: boolean; pid: string; }>;
-  progress: number;
-  status: 'running' | 'succeeded' | 'failed';
-  failure_reason?: string;
-  error?: string;
-}
-
-async function submitGRSaiVideoTask(params: VideoGenParams, config: ApiConfig): Promise<{ id: string }> {
-  const { prompt, firstFrameImage, referenceImages, aspectRatio = '16:9', duration = 10 } = params;
-  
-  const requestBody: any = {
-    model: 'sora-2', prompt, aspectRatio, duration, webHook: '-1', shutProgress: true
-  };
-  
-  if (firstFrameImage) requestBody.url = firstFrameImage;
-  else if (referenceImages && referenceImages.length > 0) {
-    if (referenceImages.length > 1) {
-      console.warn(`[GRSai视频] 仅支持单张参考图，已自动使用第一张，丢弃了 ${referenceImages.length - 1} 张`);
-    }
-    requestBody.url = referenceImages[0];
-  }
-
-  const bodyStr = JSON.stringify(requestBody);
-  console.log(`[GRSai] 提交视频任务, body大小: ${(bodyStr.length / 1024).toFixed(1)}KB`);
-
-  const SUBMIT_TIMEOUT_MS = 120_000;
-  const MAX_RETRIES = 2;
-  let lastError: any;
-
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    if (attempt > 0) {
-      const delayMs = 2000 * attempt;
-      console.log(`[GRSai] 第 ${attempt} 次重试提交，等待 ${delayMs}ms...`);
-      await new Promise(resolve => setTimeout(resolve, delayMs));
-    }
-
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), SUBMIT_TIMEOUT_MS);
-
-      const response = await fetch(`${config.baseUrl}/v1/video/sora-video`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${config.apiKey}` },
-        body: bodyStr,
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-
-      if (!response.ok) throw new Error(`GRSai API 请求失败: ${response.status} ${await response.text()}`);
-
-      const result = await response.json();
-      if (result.code !== 0) throw new Error(`GRSai 错误: ${result.msg}`);
-      return { id: result.data.id };
-    } catch (error: any) {
-      lastError = error;
-      const msg = error?.message || '';
-      console.error(`[GRSai] 第 ${attempt + 1} 次提交失败:`, msg);
-
-      const isNetworkError = msg.includes('fetch failed') ||
-                             msg.includes('AbortError') ||
-                             msg.includes('network') ||
-                             msg.includes('connect') ||
-                             msg.includes('timeout') ||
-                             msg.includes('ECONN');
-      if (!isNetworkError) throw error;
-    }
-  }
-
-  throw new Error(`GRSai 网络请求失败（已重试${MAX_RETRIES}次）: ${lastError?.message || '未知错误'}。请检查网络连接或稍后重试`);
-}
-
-async function waitForGRSaiVideo(
-  id: string,
-  config: ApiConfig,
-  maxWaitTime = 300000,
-  onProgress?: (progress: number) => void
-): Promise<string> {
-  const startTime = Date.now();
-  // 指数退避：初始 2s，每次增长 1.5x，上限 15s
-  let intervalMs = 2000;
-  const maxIntervalMs = 15000;
-  const backoffFactor = 1.5;
-
-  while (Date.now() - startTime < maxWaitTime) {
-    const response = await fetch(`${config.baseUrl}/v1/video/result`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${config.apiKey}` },
-      body: JSON.stringify({ id })
-    });
-    if (!response.ok) {
-      // 请求失败时也使用退避间隔
-      await new Promise(resolve => setTimeout(resolve, intervalMs));
-      intervalMs = Math.min(intervalMs * backoffFactor, maxIntervalMs);
-      continue;
-    }
-    const result: GRSaiVideoResult = await response.json();
-    
-    if (result.progress !== undefined) {
-      onProgress?.(result.progress);
-    }
-    
-    if (result.status === 'succeeded' && result.results?.length) return result.results[0].url;
-    if (result.status === 'failed') throw new Error(`GRSai 视频生成失败: ${result.failure_reason || result.error || '未知错误'}`);
-
-    // 任务仍在进行，按退避间隔等待
-    await new Promise(resolve => setTimeout(resolve, intervalMs));
-    intervalMs = Math.min(intervalMs * backoffFactor, maxIntervalMs);
-  }
-  throw new Error('GRSai 视频生成超时');
-}
-
-export async function generateVideoWithGRSai(
-  params: VideoGenParams,
-  config: ApiConfig,
-  onProgress?: (progress: number) => void
-): Promise<string> {
-  const startTime = Date.now();
-  const model = 'sora-2';
-  const baseUrl = config.baseUrl || 'https://grsai.dakka.com.cn';
-  
-  try {
-    const { id } = await submitGRSaiVideoTask(params, config);
-    const videoUrl = await waitForGRSaiVideo(id, config, 300000, onProgress);
-    
-    recordAICall({
-      provider: 'grsai',
-      model,
-      endpoint: `${baseUrl}/v1/video/sora-video`,
-      requestTime: Date.now() - startTime,
-      status: 'success',
-      taskId: id,
-      requestBody: sanitizeAICallBody({ model, prompt: params.prompt?.slice(0, 200), aspectRatio: params.aspectRatio, duration: params.duration }),
-      responseBody: sanitizeAICallBody({ videoUrl }),
-    });
-    
-    return videoUrl;
-  } catch (error: any) {
-    recordAICall({
-      provider: 'grsai',
-      model,
-      endpoint: `${baseUrl}/v1/video/sora-video`,
-      requestTime: Date.now() - startTime,
-      status: error.message?.includes('超时') ? 'timeout' : 'failed',
-      errorMessage: error.message,
-      requestBody: sanitizeAICallBody({ model, prompt: params.prompt?.slice(0, 200), aspectRatio: params.aspectRatio, duration: params.duration }),
-    });
-    throw error;
-  }
-}
-
 // ========== Wan 2.6 视频生成 ==========
 
 export async function generateVideoWithWan26(
@@ -783,9 +629,6 @@ export async function generateVideo(
     case 'ark':
       return generateVideoWithVolcEngine(params, config);
     
-    case 'grsai':
-      return generateVideoWithGRSai(params, config, onProgress);
-    
     case 'openrouter':
       if (model.includes('wan-2.6') || model.includes('wan-2.7')) {
         return generateVideoWithWan26(params, config, onProgress);
@@ -793,7 +636,7 @@ export async function generateVideo(
       return generateVideoWithOpenRouter(params, config, onProgress);
     
     default:
-      throw new Error(`不支持的视频生成 provider: ${config.provider}。支持的 provider: volcengine, grsai, openrouter`);
+      throw new Error(`不支持的视频生成 provider: ${config.provider}。支持的 provider: volcengine, openrouter, dashscope`);
   }
 }
 

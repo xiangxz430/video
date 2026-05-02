@@ -118,13 +118,8 @@ success "TypeScript 构建完成"
 # 8. 配置环境变量
 # ------------------------------------------
 if [ ! -f ".env" ]; then
-    if [ -f ".env.production" ]; then
-        info "从 .env.production 复制 .env..."
-        cp .env.production .env
-        warn "请根据生产环境编辑 .env 文件: vi $SERVER_DIR/.env"
-    else
-        warn ".env 和 .env.production 均不存在，请手动创建 .env 文件"
-    fi
+    warn ".env 文件不存在，请手动创建 .env 文件: vi $SERVER_DIR/.env"
+    warn "可参考 .env.production 模板中的配置项填写实际值"
 else
     success ".env 文件已存在"
 fi

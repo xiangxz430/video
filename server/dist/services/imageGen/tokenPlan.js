@@ -20,7 +20,7 @@
  * 响应取值: result.data[0].url
  */
 import { recordAICall, sanitizeAICallBody } from '../logContext.js';
-// 宽高比 → 像素尺寸映射 (qwen-image-2.0 官方推荐分辨率，DashScope 使用 * 分隔符)
+// 宽高比 → 像素尺寸映射 (qwen-image-2.0 官方推荐分辨率，2K 基准)
 const ASPECT_RATIO_SIZE_MAP = {
     '16:9': '2688*1536',
     '9:16': '1536*2688',
@@ -29,9 +29,26 @@ const ASPECT_RATIO_SIZE_MAP = {
     '3:4': '1728*2368',
 };
 /**
+ * 将分辨率快捷方式 (1k/2k/4k) 转换为 DashScope 兼容的具体像素尺寸
+ *
+ * DashScope / Qwen-Image-2.0 不接受 '2k' 等简写，必须传入具体像素尺寸
+ * （如 '2688*1536'）。根据宽高比从官方推荐值中选择对应尺寸。
+ */
+function resolutionShortcutToSize(shortcut, aspectRatio) {
+    // 使用官方推荐尺寸作为基准
+    const ar = aspectRatio && ASPECT_RATIO_SIZE_MAP[aspectRatio]
+        ? aspectRatio
+        : '16:9'; // 默认 16:9
+    const [w, h] = ASPECT_RATIO_SIZE_MAP[ar].split('*').map(Number);
+    if (shortcut === '4k') {
+        return `${w * 2}*${h * 2}`;
+    }
+    // 2k (及自动升级的 1k)
+    return `${w}*${h}`;
+}
+/**
  * 标准化 size 参数为 DashScope 兼容格式
  * - 将 'x' 分隔符替换为 '*'
- * - 保留 'k' 分辨率简写 (如 '2k') 不做转换
  * - 保留已是 '*' 分隔符的格式
  */
 function normalizeSizeForDashScope(size) {
@@ -69,14 +86,17 @@ export async function generateTokenPlanImage(config, params) {
         }
     }
     // 尺寸处理（确保输出格式兼容 DashScope 原生 API）
+    // 注意: DashScope 不接受 '2k'/'4k' 简写，必须转换为具体像素尺寸
     if (params.size) {
         const sizeLower = params.size.toLowerCase();
         if (sizeLower === '1k') {
-            requestBody.size = '2k';
-            console.log('⚠️ 1K 分辨率不满足最小像素要求，自动升级到 2K');
+            const actualSize = resolutionShortcutToSize('2k', params.aspectRatio);
+            requestBody.size = actualSize;
+            console.log(`⚠️ 1K 分辨率不满足最小像素要求，自动升级到 ${actualSize}`);
         }
         else if (sizeLower === '2k' || sizeLower === '4k') {
-            requestBody.size = sizeLower;
+            const actualSize = resolutionShortcutToSize(sizeLower, params.aspectRatio);
+            requestBody.size = actualSize;
         }
         else {
             // 精确像素尺寸（如 "1440x2560" 或 "1440*2560"），统一转为 DashScope * 格式
@@ -89,12 +109,12 @@ export async function generateTokenPlanImage(config, params) {
             requestBody.size = mappedSize;
         }
         else {
-            requestBody.size = '2k';
+            requestBody.size = resolutionShortcutToSize('2k');
             console.log(`⚠️ 未知宽高比 ${params.aspectRatio}，默认使用 2K`);
         }
     }
     else {
-        requestBody.size = '2k';
+        requestBody.size = resolutionShortcutToSize('2k');
         console.log('⚠️ 未指定分辨率，默认使用 2K');
     }
     // 180 秒超时（图片生成可能较慢）

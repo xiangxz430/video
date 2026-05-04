@@ -13,9 +13,9 @@
  *   requestBody.images = ["https://...", "data:image/jpeg;base64,..."]
  *   支持 http/https URL 和 base64 data URL
  *
- * 宽高比映射 (与 volcEngine 一致):
- *   16:9 → 2560x1440, 9:16 → 1440x2560, 1:1 → 1920x1920
- *   4:3 → 2400x1800, 3:4 → 1800x2400
+ * 宽高比映射 (qwen-image-2.0 官方推荐分辨率，使用 DashScope * 分隔符):
+ *   16:9 → 2688*1536, 9:16 → 1536*2688, 1:1 → 2048*2048
+ *   4:3 → 2368*1728, 3:4 → 1728*2368
  *
  * 响应取值: result.data[0].url
  */

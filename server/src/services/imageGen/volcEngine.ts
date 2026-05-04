@@ -10,8 +10,8 @@
  *   支持 http/https URL 和 base64 data URL
  * 
  * 宽高比映射:
- *   16:9 → 2560x1440, 9:16 → 1440x2560, 1:1 → 1920x1920
- *   4:3 → 2400x1800, 3:4 → 1800x2400
+ *   16:9 → 2688x1536, 9:16 → 1536x2688, 1:1 → 2048x2048
+ *   4:3 → 2368x1728, 3:4 → 1728x2368
  * 
  * 响应取值: result.data[0].url
  * 
@@ -95,11 +95,11 @@ export async function generateVolcImage(params: ImageGenParams, config: ApiConfi
     }
   } else if (params.aspectRatio) {
     const ratioMap: Record<string, string> = {
-      '16:9': '2560x1440',
-      '9:16': '1440x2560',
-      '1:1': '1920x1920',
-      '4:3': '2400x1800',
-      '3:4': '1800x2400'
+      '16:9': '2688x1536',
+      '9:16': '1536x2688',
+      '1:1': '2048x2048',
+      '4:3': '2368x1728',
+      '3:4': '1728x2368'
     };
     const size = ratioMap[params.aspectRatio];
     if (size) {

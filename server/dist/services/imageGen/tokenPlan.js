@@ -13,21 +13,33 @@
  *   requestBody.images = ["https://...", "data:image/jpeg;base64,..."]
  *   支持 http/https URL 和 base64 data URL
  *
- * 宽高比映射 (与 volcEngine 一致):
- *   16:9 → 2560x1440, 9:16 → 1440x2560, 1:1 → 1920x1920
- *   4:3 → 2400x1800, 3:4 → 1800x2400
+ * 宽高比映射 (qwen-image-2.0 官方推荐分辨率，使用 DashScope * 分隔符):
+ *   16:9 → 2688*1536, 9:16 → 1536*2688, 1:1 → 2048*2048
+ *   4:3 → 2368*1728, 3:4 → 1728*2368
  *
  * 响应取值: result.data[0].url
  */
 import { recordAICall, sanitizeAICallBody } from '../logContext.js';
-// 宽高比 → 像素尺寸映射
+// 宽高比 → 像素尺寸映射 (qwen-image-2.0 官方推荐分辨率，DashScope 使用 * 分隔符)
 const ASPECT_RATIO_SIZE_MAP = {
-    '16:9': '2560x1440',
-    '9:16': '1440x2560',
-    '1:1': '1920x1920',
-    '4:3': '2400x1800',
-    '3:4': '1800x2400',
+    '16:9': '2688*1536',
+    '9:16': '1536*2688',
+    '1:1': '2048*2048',
+    '4:3': '2368*1728',
+    '3:4': '1728*2368',
 };
+/**
+ * 标准化 size 参数为 DashScope 兼容格式
+ * - 将 'x' 分隔符替换为 '*'
+ * - 保留 'k' 分辨率简写 (如 '2k') 不做转换
+ * - 保留已是 '*' 分隔符的格式
+ */
+function normalizeSizeForDashScope(size) {
+    if (/^\d+x\d+$/i.test(size)) {
+        return size.replace('x', '*');
+    }
+    return size;
+}
 /**
  * 同步调用 TokenPlan 图片生成 API
  *
@@ -42,7 +54,6 @@ export async function generateTokenPlanImage(config, params) {
     const requestBody = {
         model,
         prompt: params.prompt,
-        response_format: 'url',
     };
     // 参考图片：使用 images 数组（OpenAI-compatible 格式）
     if (params.referenceImages?.length) {
@@ -57,14 +68,19 @@ export async function generateTokenPlanImage(config, params) {
             console.warn('⚠️ TokenPlan 参考图片格式无效，将使用文生图模式');
         }
     }
-    // 尺寸处理
+    // 尺寸处理（确保输出格式兼容 DashScope 原生 API）
     if (params.size) {
-        if (params.size.toLowerCase() === '1k') {
+        const sizeLower = params.size.toLowerCase();
+        if (sizeLower === '1k') {
             requestBody.size = '2k';
             console.log('⚠️ 1K 分辨率不满足最小像素要求，自动升级到 2K');
         }
+        else if (sizeLower === '2k' || sizeLower === '4k') {
+            requestBody.size = sizeLower;
+        }
         else {
-            requestBody.size = params.size;
+            // 精确像素尺寸（如 "1440x2560" 或 "1440*2560"），统一转为 DashScope * 格式
+            requestBody.size = normalizeSizeForDashScope(params.size);
         }
     }
     else if (params.aspectRatio) {
@@ -74,6 +90,7 @@ export async function generateTokenPlanImage(config, params) {
         }
         else {
             requestBody.size = '2k';
+            console.log(`⚠️ 未知宽高比 ${params.aspectRatio}，默认使用 2K`);
         }
     }
     else {
@@ -84,7 +101,15 @@ export async function generateTokenPlanImage(config, params) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 180_000);
     try {
-        console.log(`TokenPlan 图片生成请求: model=${model}, size=${requestBody.size}, 参考图=${params.referenceImages?.length || 0}`);
+        const refImgCount = params.referenceImages?.length || 0;
+        const refImgPreview = refImgCount > 0
+            ? `[${refImgCount} 张, 首张前60字符: ${params.referenceImages[0].substring(0, 60)}...]`
+            : '无';
+        console.log(`TokenPlan 图片生成请求: model=${model}, size=${requestBody.size}, 参考图=${refImgPreview}`);
+        console.log(`TokenPlan 完整请求体: ${JSON.stringify({
+            ...requestBody,
+            images: refImgCount > 0 ? `[${refImgCount} base64 images omitted]` : undefined,
+        })}`);
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: {

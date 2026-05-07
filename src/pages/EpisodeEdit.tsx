@@ -4,7 +4,7 @@ import { useApp } from '../context/AppContext';
 import AssetLibrary from '../components/AssetLibrary';
 import ScriptEditor from '../components/ScriptEditor';
 
-import { generateVideo, VideoGenParams, generateImage, ImageGenParams, generateStoryboardScript, buildCharacterPrompt, buildScenePrompt } from '../services/aiService';
+import { generateVideo, VideoGenParams, generateImage, ImageGenParams, generateStoryboardScript, buildCharacterPrompt, generateSceneImage } from '../services/aiService';
 import { checkFFmpeg, mergeVideos } from '../services/videoService';
 import { downloadVideo, localVideoPathToSrc, saveUrlImage, localPathToSrc, localImageToBase64, isLocalFilePath, uploadImage } from '../services/fileService';
 import { saveImageHistory, getImageHistory, ImageHistory, getScript, getGeneratedImageHistory, getAllImageHistoryByDate, addGeneratedImageHistory, GeneratedImageHistory, ImageHistoryByDate, saveEpisodeCharacterOutfit, getEpisodeCharacterOutfits, deleteSegment as dbDeleteSegment, createSegment as dbCreateSegment, getSegmentsByEpisode, getScenesByScript, getCharactersByScript } from '../services/database';
@@ -316,18 +316,9 @@ const EpisodeEdit: React.FC = () => {
       addLog(`🤖 使用模型: ${availableImageModels.find((m: any) => m.id === selectedImageModel)?.name}`);
       addLog(`🔧 Provider: ${imageConfig?.provider || 'unknown'}`);
       
-      // 场景图提示词（使用统一构建函数，四视角转台图）
-      const scenePrompt = buildScenePrompt(scene.description);
-      
-      const params: ImageGenParams = {
-        prompt: scenePrompt,
-        model: selectedImageModel,
-        size: selectedImageSize,
-        aspectRatio: '16:9'
-      };
-      
-      console.log('生成场景图片，提示词:', scenePrompt);
-      const imageUrl = await generateImage(params, imageConfig);
+      // 场景图生成（服务端自动构建四视角转台图提示词）
+      console.log('生成场景图片，描述:', scene.description);
+      const imageUrl = await generateSceneImage(scene.description, imageConfig);
       console.log('场景图片生成成功:', imageUrl);
       
       // 下载图片到本地

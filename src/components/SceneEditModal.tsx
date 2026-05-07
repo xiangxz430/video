@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { Scene } from '../types';
 import { uploadImage, localPathToSrc, saveUrlImage, localImageToBase64, isLocalFilePath, uploadMultipleImages, getImageDimensions, checkImageMeetsMinPixels, exportImageFile } from '../services/fileService';
-import { generateImage, generateImageWithVolcEngine, ImageGenParams, buildScenePrompt } from '../services/aiService';
+import { generateImage, generateImageWithVolcEngine, ImageGenParams, generateSceneImage } from '../services/aiService';
 import { getApiConfig, getImageHistory, saveImageHistory, deleteImageHistory, ImageHistory, addGeneratedImageHistory } from '../services/database';
 import { getAspectRatioStyle } from '../utils/aspectRatioUtils';
 import { getEnabledModels, ModelInfo, getModelDisplayText } from '../utils/modelConfig';
@@ -181,16 +181,8 @@ const SceneEditModal: React.FC<SceneEditModalProps> = ({ scene, onClose, onSave 
         baseUrl: ''
       };
       
-      // 场景图提示词（使用统一构建函数，四视角转台图）
-      const scenePrompt = buildScenePrompt(description);
-      
-      const params: ImageGenParams = { 
-        prompt: scenePrompt,
-        model: selectedModel,
-        size: selectedSize,
-        aspectRatio: selectedAspectRatio
-      };
-      const generatedImageUrl = await generateImage(params, configWithModel);
+      // 场景图生成（服务端自动构建四视角转台图提示词）
+      const generatedImageUrl = await generateSceneImage(description, configWithModel);
       addLog(`✅ 生成成功！`);
       addLog(`🔗 图片URL: ${generatedImageUrl}`);
       
@@ -221,8 +213,10 @@ const SceneEditModal: React.FC<SceneEditModalProps> = ({ scene, onClose, onSave 
           
           alert('图片生成成功！');
         } else {
-          addLog('❌ 下载失败: 返回路径为空');
-          alert('图片下载失败: 返回路径为空');
+          // 本地下载失败，使用远程 URL 显示
+          addLog('⚠️ 本地下载失败，使用远程URL（24小时后可能过期）');
+          setImageUrl(generatedImageUrl);
+          alert('图片生成成功！但本地保存失败，当前使用远程URL显示。\n建议稍后重新下载。');
         }
       } catch (downloadError: any) {
         const downloadErrorMsg = downloadError?.message || String(downloadError);
@@ -314,11 +308,9 @@ const SceneEditModal: React.FC<SceneEditModalProps> = ({ scene, onClose, onSave 
         return;
       }
 
-      // 构建提示词（参考图模式，使用统一构建函数）
-      const scenePrompt = buildScenePrompt(refPrompt, true);
-
+      // 参考图生图（使用用户原始提示词）
       const params: ImageGenParams = {
-        prompt: scenePrompt,
+        prompt: refPrompt,
         model: selectedModel,
         size: selectedSize,
         aspectRatio: selectedAspectRatio,
@@ -329,8 +321,10 @@ const SceneEditModal: React.FC<SceneEditModalProps> = ({ scene, onClose, onSave 
       const generatedImageUrl = await generateImage(params, configWithModel);
 
       // 下载到本地
+      addLog('💾 开始下载图片到本地...');
       const localPath = await saveUrlImage(generatedImageUrl, 'scenes');
       if (localPath) {
+        addLog(`✅ 下载成功！本地路径: ${localPath}`);
         setImageUrl(localPath);
         
         // 保存到图片历史
@@ -351,6 +345,14 @@ const SceneEditModal: React.FC<SceneEditModalProps> = ({ scene, onClose, onSave 
         setRefPrompt('');
         setShowRefImageSection(false);
         alert('图片生成成功！');
+      } else {
+        // 本地下载失败，使用远程 URL 显示
+        addLog('⚠️ 本地下载失败，使用远程URL（24小时后可能过期）');
+        setImageUrl(generatedImageUrl);
+        setRefImages([]);
+        setRefPrompt('');
+        setShowRefImageSection(false);
+        alert('图片生成成功！但本地保存失败，当前使用远程URL显示。\n建议稍后重新下载。');
       }
     } catch (error: any) {
       console.error('生成失败:', error);

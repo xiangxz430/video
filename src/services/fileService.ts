@@ -183,14 +183,19 @@ export async function saveUrlImage(url: string, subfolder?: string): Promise<str
         error?: string;
       }>('download_image', { url });
       
-      console.log('saveUrlImage: 下载结果:', result.success, result.error);
+      console.log('saveUrlImage: 下载结果:', result.success, '错误:', result.error || '无');
       
       if (!result.success) {
-        throw new Error(result.error || '下载失败');
+        const errDetail = result.error || '未知下载错误';
+        console.error('saveUrlImage: Rust下载失败:', errDetail);
+        pageLog(`[文件服务] ⚠️ 图片下载失败: ${errDetail}`);
+        return null; // 不再 fallback 到远程 URL
       }
       
       if (!result.data || result.data.length === 0) {
-        throw new Error('下载的数据为空');
+        console.error('saveUrlImage: 下载的数据为空');
+        pageLog('[文件服务] ⚠️ 下载的图片数据为空');
+        return null;
       }
       
       bytes = new Uint8Array(result.data);
@@ -247,9 +252,8 @@ export async function saveUrlImage(url: string, subfolder?: string): Promise<str
   } catch (error: any) {
     const errMsg = error?.message || String(error);
     console.error('saveUrlImage: 保存失败:', error);
-    pageLog(`[文件服务] 图片下载失败: ${errMsg}，使用远程URL作为fallback`);
-    // 下载失败时返回远程 URL 作为 fallback
-    return url;
+    pageLog(`[文件服务] ❌ 图片保存失败: ${errMsg}`);
+    return null; // 下载/保存失败，返回 null 让调用方使用远程 URL
   }
 }
 

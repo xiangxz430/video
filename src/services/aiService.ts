@@ -29,18 +29,6 @@ export function buildCharacterPrompt(description: string, referenceMode: boolean
 风格：${referenceMode ? '影视级角色设定图' : '高清细腻，色彩准确，光影自然，布局清晰专业'}`;
 }
 
-export function buildScenePrompt(description: string, referenceMode: boolean = false): string {
-  const prefix = referenceMode ? '基于参考图片的风格和特征，' : '';
-  return `${prefix}${description}
-画面布局要求（2×2 网格，同一场景四视角展示）：
-1. 左上角 - 正视图（Front View）：正面视角展现场景主体结构与入口布局
-2. 右上角 - 侧视图（Side/3-Quarter View）：45度角展现空间纵深与侧立面细节
-3. 左下角 - 俯视图（Top-Down/Overhead）：鸟瞰视角展现整体平面布局与动线设计
-4. 右下角 - 全景 Establishing Shot：广角展现场景全貌与周围环境关系
-5. 确保四图光影一致、材质统一、空间逻辑自洽，可用作3D建模与关卡设计的参考。
-风格：影视级场景概念图，环境转台参考表，高清细腻，透视准确，细节丰富`;
-}
-
 // ========== 类型定义（兼容旧代码） ==========
 export interface ImageGenParams {
   prompt: string;
@@ -223,6 +211,6 @@ export async function generateCharacterImage(description: string, config?: any):
   return serverGenerateCharacterImage(description, false, config?.provider, config?.model);
 }
 
-export async function generateSceneImage(description: string, config?: any): Promise<string> {
-  return serverGenerateSceneImage(description, false, config?.provider, config?.model);
+export async function generateSceneImage(description: string, config?: any, referenceMode?: boolean): Promise<string> {
+  return serverGenerateSceneImage(description, referenceMode, config?.provider, config?.model);
 }

@@ -310,6 +310,10 @@ const Home: React.FC = () => {
         
         // 刷新历史列表
         await loadImageHistory();
+      } else {
+        // 本地下载失败，使用远程 URL 显示
+        addImageLog('⚠️ 本地下载失败，使用远程URL（24小时后可能过期）');
+        setGeneratedImageUrl(imageUrl);
       }
     } catch (error: any) {
       const errorMsg = error?.message || error?.toString() || '未知错误';

@@ -224,13 +224,9 @@ const CharacterEditModal: React.FC<CharacterEditModalProps> = ({ character, onCl
               addLog('📸 已保存到图片历史');
               // 也保存到统一历史
               await addGeneratedImageHistory(localPath, description, selectedModel, selectedSize, selectedAspectRatio, 'character', character.id);
-              addLog('📸 已保存到统一历史');
+              addLog('📸 已保存到首页生成历史');
               // 刷新历史列表
               await loadImageHistory();
-              
-              // 同时保存到首页生成历史，方便在首页"从历史选择"中使用
-              await addGeneratedImageHistory(localPath, description, selectedModel, selectedSize, selectedAspectRatio, 'character', character.id);
-              console.log('已保存到首页生成历史');
             } catch (historyError) {
               console.error('保存图片历史失败:', historyError);
               addLog(`❌ 保存历史失败: ${historyError}`);
@@ -241,8 +237,10 @@ const CharacterEditModal: React.FC<CharacterEditModalProps> = ({ character, onCl
           
           alert('图片生成成功！');
         } else {
-          addLog('❌ 下载失败: 返回路径为空');
-          alert('图片下载失败: 返回路径为空');
+          // 本地下载失败，使用远程 URL 作为临时显示
+          addLog('⚠️ 本地下载失败，使用远程URL（24小时后可能过期）');
+          setImageUrl(generatedImageUrl);
+          alert('图片生成成功！但本地保存失败，当前使用远程URL显示。\n建议稍后重新下载到本地。');
         }
       } catch (downloadError: any) {
         const downloadErrorMsg = downloadError?.message || String(downloadError);
@@ -385,7 +383,19 @@ const CharacterEditModal: React.FC<CharacterEditModalProps> = ({ character, onCl
         
         alert('副图生成成功！');
       } else {
-        alert('图片下载失败');
+        // 本地下载失败，使用远程 URL 作为 fallback
+        addLog('⚠️ 本地下载失败，使用远程URL显示');
+        const newAlt: CharacterAlternativeImage = {
+          id: `alt_${Date.now()}`,
+          name: newAltName || `穿着 ${alternativeImages.length + 1}`,
+          description: newAltDescription,
+          imageUrl: generatedImageUrl
+        };
+        setAlternativeImages(prev => [...prev, newAlt]);
+        setIsAddingAlt(false);
+        setNewAltDescription('');
+        setNewAltName('');
+        alert('副图生成成功！但本地保存失败，当前使用远程URL显示。');
       }
     } catch (error: any) {
       const errorMsg = error?.message || String(error);

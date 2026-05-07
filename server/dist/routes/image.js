@@ -58,14 +58,24 @@ function buildCharacterPrompt(description, referenceMode = false) {
 function buildScenePrompt(description, referenceMode = false) {
     const cleanDesc = jsonDescriptionToText(description);
     const prefix = referenceMode ? '基于参考图片的风格和特征，' : '';
-    return `${prefix}${cleanDesc}
-画面布局要求（2×2 网格，同一场景四视角展示）：
-1. 左上角 - 正视图（Front View）：正面视角展现场景主体结构与入口布局
-2. 右上角 - 侧视图（Side/3-Quarter View）：45度角展现空间纵深与侧立面细节
-3. 左下角 - 俯视图（Top-Down/Overhead）：鸟瞰视角展现整体平面布局与动线设计
-4. 右下角 - 全景 Establishing Shot：广角展现场景全貌与周围环境关系
-5. 确保四图光影一致、材质统一、空间逻辑自洽，可用作3D建模与关卡设计的参考。
-风格：影视级场景概念图，环境转台参考表，高清细腻，透视准确，细节丰富`;
+    return `${prefix}【核心要求】这是同一个场景/空间的四个不同拍摄角度，必须是完全相同的一个房间/环境，只是摄像机位置不同。所有家具、物品、墙壁颜色、地板材质、光源位置必须在四个视角中保持完全一致。
+
+场景描述：${cleanDesc}
+
+画面布局（2×2 网格，同一场景的摄像机环绕拍摄）：
+1. 左上角 - 正面机位（Front View）：站在入口处正对场景主体拍摄，展现正面全貌
+2. 右上角 - 右侧机位（Right 3/4 View）：从场景右侧45度角拍摄，展现空间纵深感
+3. 左下角 - 背面机位（Back View）：从场景对面回望入口方向，展现背面结构
+4. 右下角 - 左侧机位（Left 3/4 View）：从场景左侧45度角拍摄，与右上形成对称视角
+
+【一致性强制约束】：
+- 这是一台摄像机围绕同一个房间旋转拍摄的四个画面，不是四个不同的房间
+- 四个画面中出现的所有物体（家具、装饰、窗户、门）必须位置固定、外观相同
+- 光照方向统一（同一光源），阴影方向一致，色温相同
+- 墙面/地面/天花板材质纹理在四个视角中必须连续且一致
+- 画面中绝对不出现任何人物，仅展示纯环境空间
+
+风格：影视级场景概念设计，环境转台参考表（environment turntable reference sheet），高清细腻，透视准确，空间结构严谨`;
 }
 // POST /api/image/generate - 生成图片
 router.post('/generate', async (req, res) => {

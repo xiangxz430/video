@@ -125,36 +125,67 @@ export async function waitForWanxTask(config: any, taskId: string): Promise<stri
 }
 
 // ========== 分镜生成（分阶段多批次编排） ==========
+
+/** 断点续生成数据 */
+export interface StoryboardResumeData {
+  enrichedShots: any[];
+  usedContents: string[];
+  completedBatches: number;
+  allShots: any[];
+}
+
+/** 批次完成回调数据 */
+export interface StoryboardBatchCompleteData {
+  enrichedShots: any[];
+  usedContents: string[];
+  completedBatches: number;
+  allShots: any[];
+}
+
 export async function generateStoryboardScript(
   episodeContent: string,
   characters: any[],
   scenes: any[],
   config?: any,
   onProgress?: (message: string, step?: number, totalSteps?: number) => void,
-  onContentStream?: (chunk: string) => void
+  onContentStream?: (chunk: string) => void,
+  resumeData?: StoryboardResumeData,
+  onBatchComplete?: (data: StoryboardBatchCompleteData) => void
 ): Promise<any[]> {
   const provider = config?.provider;
   const model = config?.model;
   const BATCH_SIZE = 6;
 
-  // 阶段1: 镜头划分
-  onProgress?.('正在划分镜头结构...', 1, 2);
-  const splitResult = await splitStoryboard(
-    { episodeContent, characters, scenes, provider, model },
-    (data) => onProgress?.(data.message || '正在划分镜头结构...', 1, 2),
-    onContentStream
-  );
-  const allShots = splitResult.shots;
-  const totalShots = allShots.length;
-  const totalBatches = Math.ceil(totalShots / BATCH_SIZE);
+  // 阶段1: 镜头划分（续生成时跳过）
+  let allShots: any[];
+  let totalShots: number;
+  let totalBatches: number;
 
-  onProgress?.(`✅ 划分完成，共 ${totalShots} 个镜头，分 ${totalBatches} 批完善...`, 1, 2);
+  if (resumeData?.allShots?.length) {
+    // 断点续生成：复用之前的镜头划分结果
+    allShots = resumeData.allShots;
+    totalShots = allShots.length;
+    totalBatches = Math.ceil(totalShots / BATCH_SIZE);
+    onProgress?.(`✅ 从断点恢复，共 ${totalShots} 个镜头，已完成 ${resumeData.completedBatches}/${totalBatches} 批，继续完善...`, 1, 2);
+  } else {
+    onProgress?.('正在划分镜头结构...', 1, 2);
+    const splitResult = await splitStoryboard(
+      { episodeContent, characters, scenes, provider, model },
+      (data) => onProgress?.(data.message || '正在划分镜头结构...', 1, 2),
+      onContentStream
+    );
+    allShots = splitResult.shots;
+    totalShots = allShots.length;
+    totalBatches = Math.ceil(totalShots / BATCH_SIZE);
+    onProgress?.(`✅ 划分完成，共 ${totalShots} 个镜头，分 ${totalBatches} 批完善...`, 1, 2);
+  }
 
   // 阶段2: 分批完善
-  let allEnrichedShots: any[] = [];
-  let usedContents: string[] = [];
+  let allEnrichedShots: any[] = resumeData?.enrichedShots ? [...resumeData.enrichedShots] : [];
+  let usedContents: string[] = resumeData?.usedContents ? [...resumeData.usedContents] : [];
+  const startBatch = resumeData?.completedBatches || 0;
 
-  for (let batch = 0; batch < totalBatches; batch++) {
+  for (let batch = startBatch; batch < totalBatches; batch++) {
     const start = batch * BATCH_SIZE;
     const end = Math.min(start + BATCH_SIZE, totalShots);
 
@@ -178,9 +209,24 @@ export async function generateStoryboardScript(
 
       allEnrichedShots = [...allEnrichedShots, ...batchResult.enrichedShots];
       usedContents = batchResult.usedContents;
+
+      // 每批完成后回调，传入当前累计状态
+      onBatchComplete?.({
+        enrichedShots: allEnrichedShots,
+        usedContents: [...usedContents],
+        completedBatches: batch + 1,
+        allShots
+      });
     } catch (err: any) {
       const errMsg = err?.message || '未知错误';
-      throw new Error(`第 ${batch + 1}/${totalBatches} 批（镜头 ${start + 1}-${end}）完善失败: ${errMsg}`);
+      const error = new Error(`第 ${batch + 1}/${totalBatches} 批（镜头 ${start + 1}-${end}）完善失败: ${errMsg}`);
+      (error as any).partialResult = {
+        enrichedShots: allEnrichedShots,
+        usedContents,
+        completedBatches: batch,
+        allShots
+      };
+      throw error;
     }
   }
 

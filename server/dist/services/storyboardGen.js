@@ -205,7 +205,7 @@ ${episodeContent}
     }));
 }
 // ========== 辅助函数 2: 逐个镜头完善设计 ==========
-export async function enrichEachShot(shots, episodeContent, characterInfo, sceneInfo, config, onProgress, onContentStream, startIndex, endIndex, existingUsedContents) {
+export async function enrichEachShot(shots, episodeContent, characterInfo, sceneInfo, config, onProgress, onContentStream, startIndex, endIndex, existingUsedContents, throwOnFail) {
     const startIdx = startIndex ?? 0;
     const endIdx = endIndex ?? shots.length;
     const enriched = [];
@@ -229,7 +229,9 @@ export async function enrichEachShot(shots, episodeContent, characterInfo, scene
         onProgress?.(`🎬 正在设计第 ${progressIdx}/${progressTotal} 个镜头 (镜头${i + 1})...`, 2, 2);
         let usedContentHint = '';
         if (usedContents.length > 0) {
-            const usedList = usedContents.map((item) => {
+            // 只保留最近10条已用内容放入prompt，避免prompt过长
+            const recentUsedContents = usedContents.slice(-10);
+            const usedList = recentUsedContents.map((item) => {
                 const parts = [];
                 if (item.description)
                     parts.push(`描述: ${item.description}`);
@@ -239,7 +241,10 @@ export async function enrichEachShot(shots, episodeContent, characterInfo, scene
                     parts.push(`台词: ${item.dialogue}`);
                 return `镜头${item.shotNumber}: ${parts.join(' | ')}`;
             }).join('\n');
-            usedContentHint = `\n\n【已分配内容 - 严禁重复使用】\n以下内容已分配给前面的镜头，你必须使用完全不同的原文段落，严禁使用相同或相似的措辞：\n${usedList}\n\n请从原文中选择尚未被任何镜头使用的段落来设计当前镜头。`;
+            const totalCount = usedContents.length;
+            const showingCount = recentUsedContents.length;
+            const countHint = totalCount > showingCount ? `（共${totalCount}条，此处仅展示最近${showingCount}条）` : '';
+            usedContentHint = `\n\n【已分配内容 - 严禁重复使用】${countHint}\n以下内容已分配给前面的镜头，你必须使用完全不同的原文段落，严禁使用相同或相似的措辞：\n${usedList}\n\n请从原文中选择尚未被任何镜头使用的段落来设计当前镜头。`;
         }
         const shotNarration = shot.narrationSource || shot.description || '';
         let prevShotContext = '';
@@ -390,7 +395,15 @@ ${JSON.stringify(shot, null, 2)}
                     requestBody: sanitizeAICallBody({ action: 'enrichShot', shotNumber: i + 1, scene: shot.scene }),
                 });
                 if (retry === maxRetries - 1) {
-                    onProgress?.(`❌ 第 ${progressIdx}/${progressTotal} 个镜头生成失败: ${error?.message || '未知错误'}，使用原始数据`, 2, 2);
+                    const errorMsg = error?.message || error?.toString() || '未知AI错误';
+                    if (throwOnFail) {
+                        onProgress?.(`❌ 镜头 ${i + 1} 完善失败（已重试${maxRetries}次）: ${errorMsg}`, 2, 2);
+                        const finalError = new Error(`镜头 ${i + 1} 完善失败（已重试${maxRetries}次）: ${errorMsg}`);
+                        finalError.shotIndex = i;
+                        finalError.lastRetryError = error;
+                        throw finalError;
+                    }
+                    onProgress?.(`❌ 第 ${progressIdx}/${progressTotal} 个镜头生成失败: ${errorMsg}，使用原始数据`, 2, 2);
                     enriched.push(shot);
                     success = true;
                 }

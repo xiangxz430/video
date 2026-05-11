@@ -52,8 +52,9 @@ router.post('/generate', async (req, res) => {
     res.write(`event: done\ndata: ${JSON.stringify({ shots })}\n\n`);
     res.end();
   } catch (error: any) {
-    console.error('Storyboard generate error:', error);
-    res.write(`event: error\ndata: ${JSON.stringify({ message: error.message || '分镜生成失败' })}\n\n`);
+    const errorDetail = error?.message || error?.toString() || '分镜生成失败（未知原因）';
+    console.error('Storyboard generate error:', errorDetail, error?.stack);
+    res.write(`event: error\ndata: ${JSON.stringify({ message: errorDetail })}\n\n`);
     res.end();
   }
 });
@@ -105,8 +106,9 @@ router.post('/split', async (req, res) => {
     res.write(`event: done\ndata: ${JSON.stringify({ shots })}\n\n`);
     res.end();
   } catch (error: any) {
-    console.error('Storyboard split error:', error);
-    res.write(`event: error\ndata: ${JSON.stringify({ message: error.message || '镜头划分失败' })}\n\n`);
+    const errorDetail = error?.message || error?.toString() || '镜头划分失败（未知原因）';
+    console.error('Storyboard split error:', errorDetail, error?.stack);
+    res.write(`event: error\ndata: ${JSON.stringify({ message: errorDetail })}\n\n`);
     res.end();
   }
 });
@@ -164,15 +166,17 @@ router.post('/enrich-batch', async (req, res) => {
       onContentStream,
       batchRange.start,
       batchRange.end,
-      usedContents
+      usedContents,
+      true  // throwOnFail: 批量完善时失败即抛出，避免静默降级
     );
 
     // 发送完成事件
     res.write(`event: done\ndata: ${JSON.stringify({ enrichedShots, usedContents: updatedUsedContents })}\n\n`);
     res.end();
   } catch (error: any) {
-    console.error('Storyboard enrich-batch error:', error);
-    res.write(`event: error\ndata: ${JSON.stringify({ message: error.message || '镜头完善失败' })}\n\n`);
+    const errorDetail = error?.message || error?.toString() || '镜头完善失败（未知原因）';
+    console.error('Storyboard enrich-batch error:', errorDetail, error?.stack);
+    res.write(`event: error\ndata: ${JSON.stringify({ message: errorDetail })}\n\n`);
     res.end();
   }
 });

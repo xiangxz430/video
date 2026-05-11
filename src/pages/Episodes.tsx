@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import EpisodeCard from '../components/EpisodeCard';
-import { generateStoryboardScript } from '../services/aiService';
+import { generateStoryboardScript, type StoryboardResumeData } from '../services/aiService';
 import { splitScript } from '../services/serverApiClient';
 import { getScript, updateEpisode as dbUpdateEpisode, getEpisodesByScript, setPageLogCallback, getSegmentsByEpisode as dbGetSegmentsByEpisode } from '../services/database';
 import { getEnabledModels, getModelDisplayText, findApiConfigForModel, getBestConfig } from '../utils/modelConfig';
@@ -29,6 +29,17 @@ const Episodes: React.FC = () => {
   const [newEpisodeTitle, setNewEpisodeTitle] = useState(''); // 新分集标题
   const [newEpisodeContent, setNewEpisodeContent] = useState(''); // 新分集内容
   const [addingEpisode, setAddingEpisode] = useState(false); // 正在添加分集
+  const [partialStoryboardData, setPartialStoryboardData] = useState<StoryboardResumeData | null>(null); // 断点续生成中间状态
+  const [resumingEpisodeId, setResumingEpisodeId] = useState<number | null>(null); // 正在续生成的分集ID
+
+  // 流式输出区域自动滚动
+  const streamContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (streamContainerRef.current) {
+      streamContainerRef.current.scrollTop = streamContainerRef.current.scrollHeight;
+    }
+  }, [storyboardContent]);
 
   // 获取可用的分镜生成模型列表
   const availableModels = useMemo(() => {
@@ -70,16 +81,21 @@ const Episodes: React.FC = () => {
     );
   }
 
-  const handleGenerateScript = async (episodeId: number, isRegenerate: boolean = false) => {
+  const handleGenerateScript = async (episodeId: number, isRegenerate: boolean = false, resumeData?: StoryboardResumeData) => {
     setGeneratingEpisodeId(episodeId);
     setGeneratingStep(0);
     setGenerateError('');
     setStoryboardProgress('正在初始化...');
     setStoryboardContent('');
 
+    // 如果是续生成，标记正在续生成分集
+    if (resumeData) {
+      setResumingEpisodeId(episodeId);
+    }
+
     try {
-      // 如果是重新生成，先删除旧的分镜数据
-      if (isRegenerate) {
+      // 如果是重新生成（非续生成），先删除旧的分镜数据
+      if (isRegenerate && !resumeData) {
         const episodeSegments = episodeSegmentsMap[episodeId] || (await dbGetSegmentsByEpisode(episodeId));
         for (const seg of episodeSegments) {
           if (seg.id) {
@@ -104,6 +120,7 @@ const Episodes: React.FC = () => {
         const configCount = apiConfigs.length;
         setGenerateError(`未找到可用的 API 配置（共${configCount}个配置）。请在服务端管理后台检查 Provider 配置`);
         setGeneratingEpisodeId(null);
+        setResumingEpisodeId(null);
         return;
       }
 
@@ -113,6 +130,7 @@ const Episodes: React.FC = () => {
       if (!episode) {
         setGenerateError('未找到该集信息');
         setGeneratingEpisodeId(null);
+        setResumingEpisodeId(null);
         return;
       }
 
@@ -130,6 +148,7 @@ const Episodes: React.FC = () => {
       if (!episodeContent) {
         setGenerateError('当前剧集内容为空，请先进行分集');
         setGeneratingEpisodeId(null);
+        setResumingEpisodeId(null);
         return;
       }
 
@@ -144,18 +163,45 @@ const Episodes: React.FC = () => {
         setStoryboardContent(prev => prev + chunk);
       };
 
+      // 定义批次完成回调：每批完成时保存中间状态
+      const handleBatchComplete = (data: { enrichedShots: any[]; usedContents: string[]; completedBatches: number; allShots: any[] }) => {
+        console.log(`[分镜进度] 第 ${data.completedBatches} 批完成，已完善 ${data.enrichedShots.length} 个镜头`);
+        setPartialStoryboardData({
+          enrichedShots: data.enrichedShots,
+          usedContents: data.usedContents,
+          completedBatches: data.completedBatches,
+          allShots: data.allShots
+        });
+      };
+
       // 调用 AI 生成分镜脚本（分阶段：镜头划分 + 分批完善）
-      setStoryboardProgress('步骤 1: 正在划分镜头结构...');
+      if (resumeData) {
+        setStoryboardProgress('正在从断点恢复生成...');
+      } else {
+        setStoryboardProgress('步骤 1: 正在划分镜头结构...');
+      }
       const storyboard = await generateStoryboardScript(
         episodeContent, 
         charData, 
         sceneData, 
         finalConfig,
         handleProgress,
-        handleContentStream
+        handleContentStream,
+        resumeData,
+        handleBatchComplete
       );
 
       setStoryboardProgress(`AI 生成了 ${storyboard.length} 个镜头，正在保存到数据库...`);
+
+      // 如果是续生成，先删除旧的分镜数据（续生成成功后才删除）
+      if (resumeData) {
+        const episodeSegments = episodeSegmentsMap[episodeId] || (await dbGetSegmentsByEpisode(episodeId));
+        for (const seg of episodeSegments) {
+          if (seg.id) {
+            await deleteSegment(seg.id);
+          }
+        }
+      }
 
       // 保存分镜到数据库（扁平结构：每个镜头一个 segment）
       let orderIndex = 0;
@@ -181,6 +227,10 @@ const Episodes: React.FC = () => {
 
       setStoryboardProgress(`生成完成！共 ${freshSegments.length} 个镜头，即将跳转...`);
 
+      // 清除断点续生成状态
+      setPartialStoryboardData(null);
+      setResumingEpisodeId(null);
+
       // 关闭弹窗后跳转
       setTimeout(() => {
         setGeneratingEpisodeId(null);
@@ -192,7 +242,20 @@ const Episodes: React.FC = () => {
     } catch (err: any) {
       console.error('Failed to generate script:', err);
       const errMsg = err?.message || err?.toString() || '';
-      if (errMsg.includes('API') || errMsg.includes('密钥') || errMsg.includes('Key') || errMsg.includes('配置') || errMsg.includes('超时') || errMsg.includes('401') || errMsg.includes('403') || errMsg.includes('404') || errMsg.includes('500')) {
+
+      // 检查是否有部分结果（断点续生成支持）
+      const partialResult = err?.partialResult;
+      if (partialResult) {
+        setPartialStoryboardData({
+          enrichedShots: partialResult.enrichedShots,
+          usedContents: partialResult.usedContents,
+          completedBatches: partialResult.completedBatches,
+          allShots: partialResult.allShots
+        });
+        setResumingEpisodeId(episodeId);
+        const totalBatches = Math.ceil((partialResult.allShots?.length || 0) / 6);
+        setGenerateError(`生成中断: ${errMsg}\n已完成 ${partialResult.completedBatches}/${totalBatches} 批，可点击"继续生成"从断点恢复`);
+      } else if (errMsg.includes('API') || errMsg.includes('密钥') || errMsg.includes('Key') || errMsg.includes('配置') || errMsg.includes('超时') || errMsg.includes('401') || errMsg.includes('403') || errMsg.includes('404') || errMsg.includes('500')) {
         setGenerateError(`API错误: ${errMsg}`);
       } else if (errMsg) {
         setGenerateError(`生成失败: ${errMsg}`);
@@ -200,6 +263,7 @@ const Episodes: React.FC = () => {
         setGenerateError('生成失败，请检查 API 配置是否正确、网络是否可用');
       }
       setGeneratingEpisodeId(null);
+      setResumingEpisodeId(null);
       setStoryboardProgress('');
       setStoryboardContent('');
     }
@@ -626,11 +690,35 @@ const Episodes: React.FC = () => {
       )}
 
       {generateError && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-sm text-red-700 flex items-center space-x-2">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-          </svg>
-          <span>{generateError}</span>
+        <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-sm text-red-700">
+          <div className="flex items-start space-x-2">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
+            <div className="flex-1">
+              <span className="whitespace-pre-wrap">{generateError}</span>
+              {partialStoryboardData && resumingEpisodeId && (
+                <div className="mt-2 flex items-center space-x-3">
+                  <button
+                    onClick={() => handleGenerateScript(resumingEpisodeId, false, partialStoryboardData)}
+                    className="px-4 py-1.5 bg-orange-500 text-white text-sm rounded-lg hover:bg-orange-600 transition font-medium"
+                  >
+                    继续生成（从第 {partialStoryboardData.completedBatches + 1} 批恢复）
+                  </button>
+                  <button
+                    onClick={() => {
+                      setPartialStoryboardData(null);
+                      setResumingEpisodeId(null);
+                      setGenerateError('');
+                    }}
+                    className="px-4 py-1.5 border border-gray-300 text-gray-600 text-sm rounded-lg hover:bg-gray-50 transition"
+                  >
+                    放弃断点
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -861,7 +949,7 @@ const Episodes: React.FC = () => {
 
             {/* 流式内容显示区 */}
             {storyboardContent && (
-              <div className="bg-gray-900 rounded-lg p-3 mb-3 max-h-40 overflow-y-auto">
+              <div ref={streamContainerRef} className="bg-gray-900 rounded-lg p-3 mb-3 max-h-40 overflow-y-auto">
                 <pre className="text-xs text-green-400 font-mono whitespace-pre-wrap break-all">
                   {storyboardContent}
                 </pre>

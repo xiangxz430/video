@@ -127,6 +127,8 @@ export interface VideoGenParams {
     duration?: number;
     enableAudio?: boolean;
     resolution?: string;
+    inputVideo?: string;
+    audioSetting?: 'auto' | 'origin';
     seed?: number;
     size?: string;
     callbackUrl?: string;

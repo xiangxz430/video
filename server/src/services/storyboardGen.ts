@@ -67,22 +67,45 @@ export async function generateStoryboardScript(
   console.log(' 步骤 2/2: 逐个镜头完善设计');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   onProgress?.('🎨 步骤 2/2: 正在逐个镜头完善设计(添加摄影参数、台词、声音等)...', 2, 2);
-  const enrichedShots = await enrichEachShot(shotStructure, episodeContent, characterInfo, sceneInfo, config, onProgress, onContentStream);
+  const { enrichedShots } = await enrichEachShot(shotStructure, episodeContent, characterInfo, sceneInfo, config, onProgress, onContentStream);
   console.log(`✅ 步骤 2 完成: 完善了 ${enrichedShots.length} 个镜头`);
   onProgress?.(`✅ 所有镜头设计完成!共 ${enrichedShots.length} 个镜头`, 2, 2);
   
   onContentStream?.('\n🔍 正在检测镜头内容重复...\n');
+
+  const finalShots = await deduplicateShots(enrichedShots, config, episodeContent, onContentStream);
   
+  logFinalResult(finalShots);
+  return finalShots;
+}
+
+function logFinalResult(shots: Shot[]) {
+  console.log('\n🎉 分镜脚本生成完成！');
+  console.log(`📊 最终结果: ${shots.length} 个镜头`);
+  shots.forEach((shot, idx) => {
+    console.log(`  镜头 ${idx + 1}: ${shot.scene} - ${shot.description?.substring(0, 30)}...`);
+  });
+  console.log('========================================\n\n');
+}
+
+// ========== 去重检测与修复 ==========
+
+export async function deduplicateShots(
+  shots: Shot[],
+  config: ApiConfig,
+  episodeContent: string,
+  onContentStream?: (content: string) => void
+): Promise<Shot[]> {
   const duplicatePairs: Array<{i: number, j: number, sim: number}> = [];
-  for (let i = 0; i < enrichedShots.length; i++) {
-    for (let j = i + 1; j < enrichedShots.length; j++) {
-      const desc1 = enrichedShots[i].description || '';
-      const desc2 = enrichedShots[j].description || '';
+  for (let i = 0; i < shots.length; i++) {
+    for (let j = i + 1; j < shots.length; j++) {
+      const desc1 = shots[i].description || '';
+      const desc2 = shots[j].description || '';
       if (desc1.length > 30 && desc2.length > 30) {
         const sim = textSimilarity(desc1, desc2);
         if (sim > 0.8) {
           duplicatePairs.push({i, j, sim});
-          onContentStream?.(`⚠️ 镜头${enrichedShots[i].shotNumber}和镜头${enrichedShots[j].shotNumber}描述相似度${(sim*100).toFixed(0)}%\n`);
+          onContentStream?.(`⚠️ 镜头${shots[i].shotNumber}和镜头${shots[j].shotNumber}描述相似度${(sim*100).toFixed(0)}%\n`);
         }
       }
     }
@@ -92,8 +115,8 @@ export async function generateStoryboardScript(
     onContentStream?.(`\n🔄 发现${duplicatePairs.length}组重复，正在自动修复...\n`);
     
     for (const dup of duplicatePairs) {
-      const targetShot = enrichedShots[dup.j];
-      const refShot = enrichedShots[dup.i];
+      const targetShot = shots[dup.j];
+      const refShot = shots[dup.i];
       
       onContentStream?.(`  重新生成镜头${targetShot.shotNumber}...\n`);
       
@@ -132,7 +155,7 @@ ${targetShot.narrationSource || targetShot.description}
         if (jsonMatch) {
           const newData = JSON.parse(jsonMatch[0]);
           if (newData.description && newData.description !== refShot.description) {
-            enrichedShots[dup.j] = { ...targetShot, ...newData };
+            shots[dup.j] = { ...targetShot, ...newData };
             onContentStream?.(`  ✅ 镜头${targetShot.shotNumber}已重新生成\n`);
           }
         }
@@ -153,22 +176,12 @@ ${targetShot.narrationSource || targetShot.description}
     onContentStream?.('✅ 未检测到重复内容\n');
   }
   
-  logFinalResult(enrichedShots);
-  return enrichedShots;
-}
-
-function logFinalResult(shots: Shot[]) {
-  console.log('\n🎉 分镜脚本生成完成！');
-  console.log(`📊 最终结果: ${shots.length} 个镜头`);
-  shots.forEach((shot, idx) => {
-    console.log(`  镜头 ${idx + 1}: ${shot.scene} - ${shot.description?.substring(0, 30)}...`);
-  });
-  console.log('========================================\n\n');
+  return shots;
 }
 
 // ========== 辅助函数 1: 简单镜头结构划分 ==========
 
-async function splitShotsSimple(
+export async function splitShotsSimple(
   episodeContent: string,
   characterInfo: string,
   sceneInfo: string,
@@ -242,15 +255,21 @@ ${episodeContent}
 
 // ========== 辅助函数 2: 逐个镜头完善设计 ==========
 
-async function enrichEachShot(
+export async function enrichEachShot(
   shots: Shot[],
   episodeContent: string,
   characterInfo: string,
   sceneInfo: string,
   config: ApiConfig,
   onProgress?: StoryboardProgressCallback,
-  onContentStream?: (content: string) => void
-): Promise<Shot[]> {
+  onContentStream?: (content: string) => void,
+  startIndex?: number,
+  endIndex?: number,
+  existingUsedContents?: string[]
+): Promise<{ enrichedShots: Shot[]; usedContents: string[] }> {
+  const startIdx = startIndex ?? 0;
+  const endIdx = endIndex ?? shots.length;
+
   const enriched: Shot[] = [];
   const usedContents: Array<{
     shotNumber: number;
@@ -258,11 +277,25 @@ async function enrichEachShot(
     action?: string;
     dialogue?: string;
   }> = [];
-  
-  for (let i = 0; i < shots.length; i++) {
+
+  // 合并外部传入的已用内容
+  if (existingUsedContents && existingUsedContents.length > 0) {
+    existingUsedContents.forEach((content, idx) => {
+      usedContents.push({
+        shotNumber: idx + 1,
+        description: content,
+        action: '',
+        dialogue: ''
+      });
+    });
+  }
+
+  for (let i = startIdx; i < endIdx; i++) {
     const shot = shots[i];
-    console.log(`  [镜头 ${i + 1}/${shots.length}] 完善设计...`);
-    onProgress?.(`🎬 正在设计第 ${i + 1}/${shots.length} 个镜头...`, 2, 2);
+    const progressIdx = i - startIdx + 1;
+    const progressTotal = endIdx - startIdx;
+    console.log(`  [镜头 ${i + 1}/${shots.length}] 完善设计 (批次进度 ${progressIdx}/${progressTotal})...`);
+    onProgress?.(`🎬 正在设计第 ${progressIdx}/${progressTotal} 个镜头 (镜头${i + 1})...`, 2, 2);
     
     let usedContentHint = '';
     if (usedContents.length > 0) {
@@ -281,7 +314,7 @@ async function enrichEachShot(
 
     let prevShotContext = '';
     if (i > 0) {
-      const prev = enriched[i - 1] || shots[i - 1];
+      const prev = enriched[i - startIdx - 1] || shots[i - 1];
       prevShotContext = `\n【前一个镜头（镜头${prev.shotNumber || i}）- 请确保与之自然衔接】
 画面: ${prev.description || '(无)'}
 动作: ${prev.action || '(无)'}
@@ -356,7 +389,7 @@ ${JSON.stringify(shot, null, 2)}
     for (let retry = 0; retry < maxRetries && !success; retry++) {
       if (retry > 0) {
         console.log(`    🔄 第 ${retry} 次重试...`);
-        onProgress?.(`🔄 第 ${i + 1}/${shots.length} 个镜头第 ${retry} 次重试...`, 2, 2);
+        onProgress?.(`🔄 第 ${progressIdx}/${progressTotal} 个镜头第 ${retry} 次重试...`, 2, 2);
       }
       
       const shotStartTime = Date.now();
@@ -402,11 +435,11 @@ ${JSON.stringify(shot, null, 2)}
             });
           }
           console.log(`    ✓ 完成`);
-          onProgress?.(`✅ 第 ${i + 1}/${shots.length} 个镜头设计完成`, 2, 2);
+          onProgress?.(`✅ 第 ${progressIdx}/${progressTotal} 个镜头设计完成`, 2, 2);
           success = true;
         } else {
           console.warn(`    ⚠️ 解析失败,使用原始镜头`);
-          onProgress?.(`⚠️ 第 ${i + 1}/${shots.length} 个镜头解析失败，使用原始数据`, 2, 2);
+          onProgress?.(`⚠️ 第 ${progressIdx}/${progressTotal} 个镜头解析失败，使用原始数据`, 2, 2);
           enriched.push(shot);
           if (shot) {
             usedContents.push({
@@ -432,7 +465,7 @@ ${JSON.stringify(shot, null, 2)}
           requestBody: sanitizeAICallBody({ action: 'enrichShot', shotNumber: i + 1, scene: shot.scene }),
         });
         if (retry === maxRetries - 1) {
-          onProgress?.(`❌ 第 ${i + 1}/${shots.length} 个镜头生成失败: ${error?.message || '未知错误'}，使用原始数据`, 2, 2);
+          onProgress?.(`❌ 第 ${progressIdx}/${progressTotal} 个镜头生成失败: ${error?.message || '未知错误'}，使用原始数据`, 2, 2);
           enriched.push(shot);
           success = true;
         }
@@ -440,7 +473,16 @@ ${JSON.stringify(shot, null, 2)}
     }
   }
   
-  return enriched;
+  // 将 usedContents 转换为简单字符串数组返回
+  const usedContentStrings = usedContents.map(item => {
+    const parts = [];
+    if (item.description) parts.push(item.description);
+    if (item.action) parts.push(item.action);
+    if (item.dialogue) parts.push(item.dialogue);
+    return parts.join(' | ');
+  });
+
+  return { enrichedShots: enriched, usedContents: usedContentStrings };
 }
 
 // ========== JSON 解析（带容错） ==========

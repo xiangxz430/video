@@ -93,6 +93,10 @@ export async function saveServerConfig(serverUrl: string, apiKey: string): Promi
 
 // 默认超时时间
 const DEFAULT_TIMEOUT = 900_000;
+// 分镜生成超时：30 分钟（多步骤 AI 调用，包含镜头划分 + 逐个镜头完善 + 去重修复）
+const STORYBOARD_TIMEOUT = 1_800_000;
+// 分阶段批次超时：10 分钟（每批 6 个镜头足够）
+const BATCH_TIMEOUT = 600_000;
 
 // 基础请求封装（使用 fetch）
 async function serverFetch(endpoint: string, body: any, options?: { timeout?: number }): Promise<any> {
@@ -250,6 +254,13 @@ async function fetchSSE<T>(
     } else {
       throw new Error('服务端未返回完整结果');
     }
+  } catch (error: any) {
+    // AbortError: 超时或主动取消 → 给出中文友好提示
+    if (error.name === 'AbortError' || error.message?.includes('Request cancelled') || error.message?.includes('aborted')) {
+      const timeoutMinutes = Math.round(timeoutMs / 60000);
+      throw new Error(`请求超时（已等待约 ${timeoutMinutes} 分钟），请重试。如频繁超时可尝试减少分集内容长度。`);
+    }
+    throw error;
   } finally {
     clearTimeout(timeoutId);
   }
@@ -348,7 +359,34 @@ export async function generateStoryboard(
   return serverSSE('/api/storyboard/generate', params, {
     onProgress,
     onContent
-  });
+  }, STORYBOARD_TIMEOUT);
+}
+
+// 分阶段 API: 镜头划分
+export async function splitStoryboard(
+  params: { episodeContent: string; characters: any[]; scenes: any[]; provider?: string; model?: string; options?: any },
+  onProgress?: (data: any) => void,
+  onContent?: (chunk: string) => void
+): Promise<{ shots: any[] }> {
+  return serverSSE('/api/storyboard/split', params, { onProgress, onContent }, BATCH_TIMEOUT);
+}
+
+// 分阶段 API: 批量完善（单批）
+export async function enrichStoryboardBatch(
+  params: {
+    episodeContent: string;
+    characters: any[];
+    scenes: any[];
+    shots: any[];
+    batchRange: { start: number; end: number };
+    usedContents: string[];
+    provider?: string;
+    model?: string;
+  },
+  onProgress?: (data: any) => void,
+  onContent?: (chunk: string) => void
+): Promise<{ enrichedShots: any[]; usedContents: string[] }> {
+  return serverSSE('/api/storyboard/enrich-batch', params, { onProgress, onContent }, BATCH_TIMEOUT);
 }
 
 // ========== 图片生成相关 API ==========
@@ -416,6 +454,8 @@ export interface GenerateVideoParams {
   size?: string;                          // 精确像素尺寸 "WIDTHxHEIGHT"
   callbackUrl?: string;                   // Webhook 回调 URL
   providerOptions?: Record<string, any>;  // Provider 特定透传参数
+  inputVideo?: string;                    // 输入视频 URL（视频参考/视频转视频）
+  audioSetting?: Record<string, any>;     // 音频设置参数
 }
 
 // 视频生成专属超时：12分钟，需大于服务端轮询上限（10分钟）

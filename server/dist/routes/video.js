@@ -18,7 +18,7 @@ router.post('/generate', async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     try {
-        let { prompt, provider, model, firstFrameImage, lastFrameImage, referenceImages, aspectRatio, duration, enableAudio, seed, size, callbackUrl, providerOptions } = req.body;
+        let { prompt, provider, model, firstFrameImage, lastFrameImage, referenceImages, aspectRatio, duration, enableAudio, seed, size, callbackUrl, providerOptions, inputVideo, audioSetting } = req.body;
         if (!prompt) {
             res.write(`event: error\ndata: ${JSON.stringify({ message: '缺少提示词' })}\n\n`);
             res.end();
@@ -51,7 +51,9 @@ router.post('/generate', async (req, res) => {
                     referenceImages,
                     aspectRatio,
                     duration,
-                    enableAudio
+                    enableAudio,
+                    inputVideo,
+                    audioSetting
                 }, config);
                 res.write(`event: progress\ndata: ${JSON.stringify({ phase: 'submitted', taskId, mode, message: `任务已提交，ID: ${taskId}` })}\n\n`);
                 // 轮询等待结果
@@ -84,7 +86,7 @@ router.post('/generate', async (req, res) => {
                     message: `状态: ${status}`
                 })}\n\n`);
             };
-            const videoUrl = await generateVideoWithDashScope({ prompt, firstFrameImage, lastFrameImage, referenceImages, aspectRatio, duration, enableAudio, seed, size, callbackUrl, providerOptions }, config, onProgress);
+            const videoUrl = await generateVideoWithDashScope({ prompt, firstFrameImage, lastFrameImage, referenceImages, aspectRatio, duration, enableAudio, seed, size, callbackUrl, providerOptions, inputVideo, audioSetting }, config, onProgress);
             // 发送完成事件
             res.write(`event: done\ndata: ${JSON.stringify({ videoUrl })}\n\n`);
             res.end();
@@ -112,7 +114,9 @@ router.post('/generate', async (req, res) => {
                 seed,
                 size,
                 callbackUrl,
-                providerOptions
+                providerOptions,
+                inputVideo,
+                audioSetting
             }, config, onProgress);
             // 发送完成事件
             res.write(`event: done\ndata: ${JSON.stringify({ videoUrl })}\n\n`);

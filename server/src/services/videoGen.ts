@@ -677,6 +677,15 @@ function resolveDashScopeModel(configModel: string, params: VideoGenParams): str
   const isWan = configModel.includes('wan2.7');
   const isHappyHorse = configModel.includes('happyhorse');
 
+  // video-edit 模式：优先级最高（inputVideo > referenceImages > firstFrameImage > t2v）
+  if (params.inputVideo) {
+    if (isHappyHorse) {
+      return 'happyhorse-1.0-video-edit';
+    }
+    // wan 系列不支持 video-edit
+    throw new Error('wan2.7 模型不支持视频编辑(video-edit)模式，请使用 HappyHorse 模型');
+  }
+
   if (params.referenceImages?.length) {
     return isWan ? 'wan2.7-r2v' : 'happyhorse-1.0-r2v';
   }
@@ -696,16 +705,40 @@ export async function generateVideoWithDashScope(
   const actualModel = resolveDashScopeModel(configModel, params);
   const baseUrl = config.baseUrl || 'https://dashscope.aliyuncs.com/api/v1';
 
+  // 判断模式
+  const isVideoEdit = actualModel.includes('video-edit');
+  const isI2v = actualModel.includes('i2v');
+  const isHappyHorse = actualModel.includes('happyhorse');
+
   // 构建请求体
   const requestBody: any = {
     model: actualModel,
     input: { prompt: params.prompt },
     parameters: {
       resolution: params.resolution === '1080' ? '1080P' : '720P',
-      ratio: params.aspectRatio || '16:9',
-      duration: Math.max(2, Math.min(15, params.duration || 5)),
     }
   };
+
+  // ratio: i2v 模式不包含（宽高比自动跟随首帧图像），video-edit 也不支持
+  if (!isI2v && !isVideoEdit) {
+    requestBody.parameters.ratio = params.aspectRatio || '16:9';
+  }
+
+  // duration: video-edit 不包含（输出时长跟随输入视频，最长15秒自动截取）
+  if (!isVideoEdit) {
+    const minDuration = isI2v ? 3 : 2;
+    requestBody.parameters.duration = Math.max(minDuration, Math.min(15, params.duration || 5));
+  }
+
+  // HappyHorse 模型默认关闭水印
+  if (isHappyHorse) {
+    requestBody.parameters.watermark = false;
+  }
+
+  // video-edit 模式额外参数
+  if (isVideoEdit) {
+    requestBody.parameters.audio_setting = params.audioSetting || 'auto';
+  }
 
   // seed
   if (params.seed !== undefined) {
@@ -713,7 +746,16 @@ export async function generateVideoWithDashScope(
   }
 
   // 构建 media 数组
-  if (params.firstFrameImage) {
+  if (isVideoEdit) {
+    // video-edit 模式：输入视频 + 参考图
+    const media: any[] = [{ type: 'video', url: params.inputVideo }];
+    if (params.referenceImages?.length) {
+      params.referenceImages.forEach(url => {
+        media.push({ type: 'reference_image', url });
+      });
+    }
+    requestBody.input.media = media;
+  } else if (params.firstFrameImage) {
     // i2v 模型：首帧/尾帧
     const media: any[] = [];
     media.push({ type: 'first_frame', url: params.firstFrameImage });

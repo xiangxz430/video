@@ -187,6 +187,7 @@ function getModelDisplayName(provider: string, modelId: string): string {
     // DashScope (百炼直连) - 视频
     'dashscope/wan2.7': 'Wan 2.7 (百炼直连)',
     'dashscope/happyhorse-1.0': 'HappyHorse 1.0 (百炼)',
+    'dashscope/happyhorse-1.0-video-edit': 'HappyHorse 视频编辑 (百炼)',
     // Token Plan (百炼包月)
     'qwen3.6-plus': 'Qwen3.6-Plus',
     'glm-5': 'GLM-5',
@@ -339,11 +340,15 @@ export function getModelDescription(provider: string, modelId: string): string {
     return tpDesc[modelId] || '百炼TokenPlan';
   }
   
-  // DashScope (百炼直连 - 图片生成)
+  // DashScope (百炼直连)
   if (provider === 'dashscope') {
     const dashDesc: Record<string, string> = {
       'wan2.7-image': '百炼-Wan图片',
       'wan2.7-image-pro': '百炼-Wan高清',
+      'happyhorse-1.0': '百炼-HappyHorse 图生视频/参考生视频',
+      'happyhorse-1.0-video-edit': '百炼-HappyHorse 视频编辑（输入视频+参考图+文本指令）',
+      'dashscope/happyhorse-1.0': '百炼-HappyHorse 图生视频/参考生视频',
+      'dashscope/happyhorse-1.0-video-edit': '百炼-HappyHorse 视频编辑（输入视频+参考图+文本指令）',
     };
     return dashDesc[modelId] || '百炼(DashScope)';
   }
@@ -363,6 +368,14 @@ export function getModelDurations(provider: string, modelId: string): number[] {
 
   // DashScope (百炼直连)
   if (provider === 'dashscope') {
+    // 视频编辑模式不需要选择时长，输出时长跟随输入视频
+    if (modelId.includes('video-edit')) {
+      return [];
+    }
+    // HappyHorse 图生视频/参考生视频
+    if (modelId.includes('happyhorse')) {
+      return [3, 5, 10, 15];
+    }
     return [5, 10];
   }
 
@@ -475,6 +488,8 @@ export function getModelPrice(provider: string, modelId: string): string | undef
     const dashscopePrice: Record<string, string> = {
       'dashscope/wan2.7': '按秒计费',
       'dashscope/happyhorse-1.0': '按秒计费',
+      'dashscope/happyhorse-1.0-video-edit': '按秒计费',
+      'happyhorse-1.0-video-edit': '按秒计费',
       'wan2.7-image': '按张计费',
       'wan2.7-image-pro': '按张计费',
     };

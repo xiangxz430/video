@@ -144,8 +144,8 @@ const Episodes: React.FC = () => {
         setStoryboardContent(prev => prev + chunk);
       };
 
-      // 调用 AI 生成分镜脚本
-      setStoryboardProgress('🎯 步骤 1/2: 正在分析剧本并划分镜头结构...');
+      // 调用 AI 生成分镜脚本（分阶段：镜头划分 + 分批完善）
+      setStoryboardProgress('步骤 1: 正在划分镜头结构...');
       const storyboard = await generateStoryboardScript(
         episodeContent, 
         charData, 
@@ -381,7 +381,7 @@ const Episodes: React.FC = () => {
         setStoryboardContent(prev => prev + chunk);
       };
 
-      setStoryboardProgress('🎯 步骤 1/2: 正在分析剧本并划分镜头结构...');
+      setStoryboardProgress('步骤 1: 正在划分镜头结构...');
       const storyboard = await generateStoryboardScript(
         newEpisodeContent, 
         charData, 
@@ -803,20 +803,20 @@ const Episodes: React.FC = () => {
                 {/* 步骤 1 */}
                 <div className="flex items-start space-x-3">
                   <div className="flex-shrink-0 mt-0.5">
-                    {storyboardProgress?.includes('✅ 划分完成') || storyboardProgress?.includes('第 1') ? (
+                    {storyboardProgress?.includes('✅ 划分完成') || storyboardProgress?.includes('步骤 2') ? (
                       <div className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center">
                         <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                         </svg>
                       </div>
-                    ) : storyboardProgress?.includes('步骤 1') ? (
+                    ) : storyboardProgress?.includes('步骤 1') || storyboardProgress?.includes('划分镜头') ? (
                       <div className="w-6 h-6 rounded-full border-2 border-primary border-t-transparent animate-spin"></div>
                     ) : (
                       <div className="w-6 h-6 rounded-full border-2 border-gray-300"></div>
                     )}
                   </div>
                   <div className="flex-1">
-                    <p className={`text-sm font-medium ${storyboardProgress?.includes('✅ 划分完成') || storyboardProgress?.includes('第 1') ? 'text-green-700' : 'text-gray-700'}`}>
+                    <p className={`text-sm font-medium ${storyboardProgress?.includes('✅ 划分完成') || storyboardProgress?.includes('步骤 2') ? 'text-green-700' : 'text-gray-700'}`}>
                       划分镜头结构
                     </p>
                     <p className="text-xs text-gray-500 mt-0.5">
@@ -834,7 +834,7 @@ const Episodes: React.FC = () => {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                         </svg>
                       </div>
-                    ) : storyboardProgress?.includes('步骤 2') || storyboardProgress?.includes('正在设计第') ? (
+                    ) : storyboardProgress?.includes('步骤 2') || storyboardProgress?.includes('正在完善第') ? (
                       <div className="w-6 h-6 rounded-full border-2 border-primary border-t-transparent animate-spin"></div>
                     ) : (
                       <div className="w-6 h-6 rounded-full border-2 border-gray-300"></div>
@@ -845,7 +845,7 @@ const Episodes: React.FC = () => {
                       完善镜头设计
                     </p>
                     <p className="text-xs text-gray-500 mt-0.5">
-                      正在逐个镜头完善设计(添加摄影参数、台词、声音等)...
+                      正在分批完善镜头设计(添加摄影参数、台词、声音等)...
                     </p>
                   </div>
                 </div>
@@ -874,8 +874,8 @@ const Episodes: React.FC = () => {
                 className="bg-primary h-2 rounded-full transition-all duration-500" 
                 style={{
                   width: storyboardProgress?.includes('✅ 所有镜头') ? '100%' : 
-                         storyboardProgress?.includes('✅ 划分完成') ? '50%' : 
-                         storyboardProgress?.includes('步骤 2') || storyboardProgress?.includes('正在设计第') ? '75%' : '25%'
+                         storyboardProgress?.includes('步骤 2') || storyboardProgress?.includes('正在完善第') ? '75%' :
+                         storyboardProgress?.includes('✅ 划分完成') ? '50%' : '25%'
                 }}
               ></div>
             </div>
@@ -887,7 +887,7 @@ const Episodes: React.FC = () => {
                   <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                 </svg>
                 <p className="text-xs text-blue-700">
-                  这个过程可能需要 2-5 分钟，AI 会逐个镜头精心设计，请耐心等待。
+                  这个过程可能需要 2-10 分钟，AI 会先划分镜头再分批完善设计，请耐心等待。
                 </p>
               </div>
             </div>

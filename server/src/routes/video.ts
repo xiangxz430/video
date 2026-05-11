@@ -36,7 +36,9 @@ router.post('/generate', async (req, res) => {
       seed,
       size,
       callbackUrl,
-      providerOptions
+      providerOptions,
+      inputVideo,
+      audioSetting
     } = req.body;
     
     if (!prompt) {
@@ -76,7 +78,9 @@ router.post('/generate', async (req, res) => {
           referenceImages,
           aspectRatio,
           duration,
-          enableAudio
+          enableAudio,
+          inputVideo,
+          audioSetting
         }, config);
         
         res.write(`event: progress\ndata: ${JSON.stringify({ phase: 'submitted', taskId, mode, message: `任务已提交，ID: ${taskId}` })}\n\n`);
@@ -116,7 +120,7 @@ router.post('/generate', async (req, res) => {
       };
 
       const videoUrl = await generateVideoWithDashScope(
-        { prompt, firstFrameImage, lastFrameImage, referenceImages, aspectRatio, duration, enableAudio, seed, size, callbackUrl, providerOptions },
+        { prompt, firstFrameImage, lastFrameImage, referenceImages, aspectRatio, duration, enableAudio, seed, size, callbackUrl, providerOptions, inputVideo, audioSetting },
         config,
         onProgress
       );
@@ -148,7 +152,9 @@ router.post('/generate', async (req, res) => {
         seed,
         size,
         callbackUrl,
-        providerOptions
+        providerOptions,
+        inputVideo,
+        audioSetting
       }, config, onProgress);
       
       // 发送完成事件

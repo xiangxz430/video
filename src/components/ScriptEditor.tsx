@@ -95,6 +95,8 @@ interface ScriptEditorProps {
   regeneratingStoryboard?: boolean;
   storyboardProgress?: string;
   storyboardContent?: string;  // 流式内容
+  // 视频编辑回调
+  onVideoEdit?: (videoUrl?: string) => void;
 }
 
 // 备用视频生成模型列表
@@ -102,6 +104,7 @@ const VIDEO_MODELS: ModelInfo[] = [
   { id: 'doubao-seedance-1-5-pro-251215', name: 'Seedance 1.5 Pro', provider: 'volcengine', capability: 'videoGeneration' },
   { id: 'dashscope/wan2.7', name: 'Wan 2.7 (百炼直连)', provider: 'dashscope', capability: 'videoGeneration' },
   { id: 'dashscope/happyhorse-1.0', name: 'HappyHorse 1.0 (百炼)', provider: 'dashscope', capability: 'videoGeneration' },
+  { id: 'dashscope/happyhorse-1.0-video-edit', name: 'HappyHorse 视频编辑', provider: 'dashscope', capability: 'videoGeneration' },
 ];
 
 const ScriptEditor: React.FC<ScriptEditorProps> = ({ 
@@ -157,7 +160,8 @@ const ScriptEditor: React.FC<ScriptEditorProps> = ({
   onRegenerateStoryboard,
   regeneratingStoryboard,
   storyboardProgress,
-  storyboardContent
+  storyboardContent,
+  onVideoEdit
 }) => {
   const { apiConfigs } = useApp();
   
@@ -965,6 +969,24 @@ const ScriptEditor: React.FC<ScriptEditorProps> = ({
                   >
                     外部播放器打开
                   </button>
+                  {/* 视频编辑按钮 - 点击后将当前视频URL传入编辑弹窗 */}
+                  {onVideoEdit && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const videoUrl = shot.localVideoPath
+                          ? convertFileSrc(shot.localVideoPath)
+                          : shot.videoUrl;
+                        onVideoEdit(videoUrl);
+                      }}
+                      className="px-3 py-1.5 text-xs bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 transition flex items-center space-x-1"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                      </svg>
+                      <span>编辑</span>
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -1479,42 +1501,58 @@ const ScriptEditor: React.FC<ScriptEditorProps> = ({
                     ))}
                   </select>
                 )}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onGenerateShotVideo(index);
-                  }}
-                  disabled={generatingShotIndex === index}
-                  className={`px-4 py-2 text-sm rounded-lg transition flex items-center space-x-2 ${
-                    generatingShotIndex === index
-                      ? 'bg-slate-100 text-slate-400 cursor-wait'
-                      : 'bg-indigo-600 text-white hover:bg-indigo-700'
-                  }`}
-                >
-                  {generatingShotIndex === index ? (
-                    <>
-                      <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                      </svg>
-                      <span>生成视频中...</span>
-                    </>
-                  ) : hasVideo ? (
-                    <>
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
-                      </svg>
-                      <span>重新生成视频</span>
-                    </>
-                  ) : (
-                    <>
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                      </svg>
-                      <span>生成视频</span>
-                    </>
-                  )}
-                </button>
+                {/* 当选择的模型是视频编辑模型时，显示“视频编辑”按钮 */}
+                {selectedVideoModel === 'dashscope/happyhorse-1.0-video-edit' ? (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onVideoEdit?.();
+                    }}
+                    className="px-4 py-2 text-sm rounded-lg transition flex items-center space-x-2 bg-emerald-600 text-white hover:bg-emerald-700"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                    </svg>
+                    <span>视频编辑</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onGenerateShotVideo(index);
+                    }}
+                    disabled={generatingShotIndex === index}
+                    className={`px-4 py-2 text-sm rounded-lg transition flex items-center space-x-2 ${
+                      generatingShotIndex === index
+                        ? 'bg-slate-100 text-slate-400 cursor-wait'
+                        : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                    }`}
+                  >
+                    {generatingShotIndex === index ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                        <span>生成视频中...</span>
+                      </>
+                    ) : hasVideo ? (
+                      <>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                        </svg>
+                        <span>重新生成视频</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                        </svg>
+                        <span>生成视频</span>
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
             )}
           </div>

@@ -141,7 +141,9 @@ export interface Shot {
   firstFramePrompt?: string;
   lastFramePrompt?: string;
   aspectRatio?: string;
-  videoGenMode?: 'text-to-video' | 'image-to-video' | 'first-last-frame';
+  videoGenMode?: 'text-to-video' | 'image-to-video' | 'first-last-frame' | 'video-edit';
+  inputVideo?: string;                       // 输入视频URL（video-edit模式必需）
+  audioSetting?: 'auto' | 'origin';          // 声音控制（video-edit模式可选）
   referenceImages?: string[];
   referenceImagePrompt?: string;
   seed?: number;                          // 确定性生成种子

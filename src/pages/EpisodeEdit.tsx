@@ -3,8 +3,10 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import AssetLibrary from '../components/AssetLibrary';
 import ScriptEditor from '../components/ScriptEditor';
+import VideoEditModal from '../components/VideoEditModal';
 
 import { generateVideo, VideoGenParams, generateImage, ImageGenParams, generateStoryboardScript, buildCharacterPrompt, generateSceneImage } from '../services/aiService';
+import { generateVideo as serverGenerateVideo, type GenerateVideoParams } from '../services/serverApiClient';
 import { checkFFmpeg, mergeVideos } from '../services/videoService';
 import { downloadVideo, localVideoPathToSrc, saveUrlImage, localPathToSrc, localImageToBase64, isLocalFilePath, uploadImage } from '../services/fileService';
 import { saveImageHistory, getImageHistory, ImageHistory, getScript, getGeneratedImageHistory, getAllImageHistoryByDate, addGeneratedImageHistory, GeneratedImageHistory, ImageHistoryByDate, saveEpisodeCharacterOutfit, getEpisodeCharacterOutfits, deleteSegment as dbDeleteSegment, createSegment as dbCreateSegment, getSegmentsByEpisode, getScenesByScript, getCharactersByScript } from '../services/database';
@@ -149,6 +151,7 @@ const EpisodeEdit: React.FC = () => {
     { id: 'doubao-seedance-1-5-pro-251215', name: 'Seedance 1.5 Pro', provider: 'volcengine', capability: 'videoGeneration' },
     { id: 'dashscope/wan2.7', name: 'Wan 2.7 (百炼直连)', provider: 'dashscope', capability: 'videoGeneration' },
     { id: 'dashscope/happyhorse-1.0', name: 'HappyHorse 1.0 (百炼)', provider: 'dashscope', capability: 'videoGeneration' },
+    { id: 'dashscope/happyhorse-1.0-video-edit', name: 'HappyHorse 视频编辑', provider: 'dashscope', capability: 'videoGeneration' },
   ];
 
   // 动态加载可用的视频模型（与硬编码备用列表合并）
@@ -205,6 +208,61 @@ const EpisodeEdit: React.FC = () => {
     prompt?: string;
   } | null>(null);
   const refPreviewResolveRef = useRef<((confirmed: boolean) => void) | null>(null);
+  
+  // 视频编辑弹窗状态
+  const [videoEditModalOpen, setVideoEditModalOpen] = useState(false);
+  const [editingVideoUrl, setEditingVideoUrl] = useState<string | undefined>(undefined);
+  const [isVideoEditing, setIsVideoEditing] = useState(false);
+
+  // 处理视频编辑提交
+  const handleVideoEditSubmit = async (params: {
+    inputVideo: string;
+    prompt: string;
+    referenceImages?: string[];
+    resolution: '720P' | '1080P';
+    audioSetting: 'auto' | 'origin';
+  }) => {
+    setIsVideoEditing(true);
+    try {
+      const videoUrl = await serverGenerateVideo({
+        prompt: params.prompt,
+        provider: 'dashscope',
+        model: 'happyhorse-1.0-video-edit',
+        inputVideo: params.inputVideo,
+        referenceImages: params.referenceImages,
+        size: params.resolution === '720P' ? '720p' : '1080p',
+        audioSetting: params.audioSetting === 'origin' ? { mode: 'preserve' } : { mode: 'auto' },
+      });
+
+      console.log('视频编辑成功，URL:', videoUrl);
+
+      // 下载视频到本地
+      let localVideoPath: string | null = null;
+      try {
+        localVideoPath = await downloadVideo(videoUrl, 'edited');
+        console.log('编辑视频下载成功，本地路径:', localVideoPath);
+      } catch (downloadError: any) {
+        console.error('编辑视频下载失败:', downloadError.message);
+      }
+
+      const finalVideoUrl = localVideoPath ? localVideoPathToSrc(localVideoPath) : videoUrl;
+      alert('视频编辑成功！');
+      setVideoEditModalOpen(false);
+      setEditingVideoUrl(undefined);
+    } catch (error: any) {
+      const errorMsg = error?.message || String(error);
+      console.error('视频编辑失败:', error);
+      alert(`视频编辑失败: ${errorMsg}`);
+    } finally {
+      setIsVideoEditing(false);
+    }
+  };
+
+  // 打开视频编辑弹窗（从已有视频入口）
+  const handleOpenVideoEdit = (videoUrl?: string) => {
+    setEditingVideoUrl(videoUrl);
+    setVideoEditModalOpen(true);
+  };
   
   // 添加日志
   const addLog = (message: string) => {
@@ -2983,6 +3041,7 @@ const EpisodeEdit: React.FC = () => {
               regeneratingStoryboard={regeneratingStoryboard}
               storyboardProgress={storyboardProgress}
               storyboardContent={storyboardContent}
+              onVideoEdit={handleOpenVideoEdit}
             />
           </div>
         </div>
@@ -3279,6 +3338,18 @@ const EpisodeEdit: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* 视频编辑弹窗 */}
+      <VideoEditModal
+        isOpen={videoEditModalOpen}
+        onClose={() => {
+          setVideoEditModalOpen(false);
+          setEditingVideoUrl(undefined);
+        }}
+        initialVideoUrl={editingVideoUrl}
+        onSubmit={handleVideoEditSubmit}
+        isGenerating={isVideoEditing}
+      />
     </div>
   );
 };

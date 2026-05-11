@@ -139,6 +139,8 @@ export interface VideoGenParams {
   duration?: number;
   enableAudio?: boolean;
   resolution?: string;
+  inputVideo?: string;                    // 输入视频URL（video-edit模式必需）
+  audioSetting?: 'auto' | 'origin';       // 声音控制（video-edit模式可选）
   seed?: number;                          // 确定性生成种子
   size?: string;                          // 精确像素尺寸 "WIDTHxHEIGHT"，与 resolution+aspect_ratio 互斥
   callbackUrl?: string;                   // Webhook 回调 URL（必须 HTTPS）

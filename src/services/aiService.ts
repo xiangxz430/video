@@ -8,6 +8,8 @@ import {
   splitScript,
   generateScript,
   generateStoryboard,
+  splitStoryboard,
+  enrichStoryboardBatch,
   generateImage as serverGenerateImage,
   generateCharacterImage as serverGenerateCharacterImage,
   generateSceneImage as serverGenerateSceneImage,
@@ -122,7 +124,7 @@ export async function waitForWanxTask(config: any, taskId: string): Promise<stri
   throw new Error('waitForWanxTask 已废弃，请使用服务端 API');
 }
 
-// ========== 分镜生成（适配到服务端） ==========
+// ========== 分镜生成（分阶段多批次编排） ==========
 export async function generateStoryboardScript(
   episodeContent: string,
   characters: any[],
@@ -131,12 +133,60 @@ export async function generateStoryboardScript(
   onProgress?: (message: string, step?: number, totalSteps?: number) => void,
   onContentStream?: (chunk: string) => void
 ): Promise<any[]> {
-  const result = await generateStoryboard(
-    { episodeContent, characters, scenes, provider: config?.provider, model: config?.model },
-    onProgress ? (data) => onProgress(data.message, data.step, data.totalSteps) : undefined,
+  const provider = config?.provider;
+  const model = config?.model;
+  const BATCH_SIZE = 6;
+
+  // 阶段1: 镜头划分
+  onProgress?.('正在划分镜头结构...', 1, 2);
+  const splitResult = await splitStoryboard(
+    { episodeContent, characters, scenes, provider, model },
+    (data) => onProgress?.(data.message || '正在划分镜头结构...', 1, 2),
     onContentStream
   );
-  return result?.shots || [];
+  const allShots = splitResult.shots;
+  const totalShots = allShots.length;
+  const totalBatches = Math.ceil(totalShots / BATCH_SIZE);
+
+  onProgress?.(`✅ 划分完成，共 ${totalShots} 个镜头，分 ${totalBatches} 批完善...`, 1, 2);
+
+  // 阶段2: 分批完善
+  let allEnrichedShots: any[] = [];
+  let usedContents: string[] = [];
+
+  for (let batch = 0; batch < totalBatches; batch++) {
+    const start = batch * BATCH_SIZE;
+    const end = Math.min(start + BATCH_SIZE, totalShots);
+
+    onProgress?.(`步骤 2: 正在完善第 ${start + 1}-${end}/${totalShots} 个镜头...（第 ${batch + 1}/${totalBatches} 批）`, 2, 2);
+
+    try {
+      const batchResult = await enrichStoryboardBatch(
+        {
+          episodeContent,
+          characters,
+          scenes,
+          shots: allShots,
+          batchRange: { start, end },
+          usedContents,
+          provider,
+          model
+        },
+        (data) => onProgress?.(data.message || `正在完善第 ${start + 1}-${end} 个镜头...`, 2, 2),
+        onContentStream
+      );
+
+      allEnrichedShots = [...allEnrichedShots, ...batchResult.enrichedShots];
+      usedContents = batchResult.usedContents;
+    } catch (err: any) {
+      const errMsg = err?.message || '未知错误';
+      throw new Error(`第 ${batch + 1}/${totalBatches} 批（镜头 ${start + 1}-${end}）完善失败: ${errMsg}`);
+    }
+  }
+
+  onProgress?.('✅ 所有镜头设计完成！', 2, 2);
+
+  return allEnrichedShots;
 }
 
 // ========== 视频生成（适配到服务端） ==========

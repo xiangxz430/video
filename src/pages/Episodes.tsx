@@ -170,7 +170,8 @@ const Episodes: React.FC = () => {
           enrichedShots: data.enrichedShots,
           usedContents: data.usedContents,
           completedBatches: data.completedBatches,
-          allShots: data.allShots
+          allShots: data.allShots,
+          episodeId: episodeId
         });
       };
 
@@ -250,20 +251,23 @@ const Episodes: React.FC = () => {
           enrichedShots: partialResult.enrichedShots,
           usedContents: partialResult.usedContents,
           completedBatches: partialResult.completedBatches,
-          allShots: partialResult.allShots
+          allShots: partialResult.allShots,
+          episodeId: episodeId
         });
         setResumingEpisodeId(episodeId);
         const totalBatches = Math.ceil((partialResult.allShots?.length || 0) / 6);
         setGenerateError(`生成中断: ${errMsg}\n已完成 ${partialResult.completedBatches}/${totalBatches} 批，可点击"继续生成"从断点恢复`);
       } else if (errMsg.includes('API') || errMsg.includes('密钥') || errMsg.includes('Key') || errMsg.includes('配置') || errMsg.includes('超时') || errMsg.includes('401') || errMsg.includes('403') || errMsg.includes('404') || errMsg.includes('500')) {
         setGenerateError(`API错误: ${errMsg}`);
+        setResumingEpisodeId(null);
       } else if (errMsg) {
         setGenerateError(`生成失败: ${errMsg}`);
+        setResumingEpisodeId(null);
       } else {
         setGenerateError('生成失败，请检查 API 配置是否正确、网络是否可用');
+        setResumingEpisodeId(null);
       }
       setGeneratingEpisodeId(null);
-      setResumingEpisodeId(null);
       setStoryboardProgress('');
       setStoryboardContent('');
     }
@@ -697,10 +701,10 @@ const Episodes: React.FC = () => {
             </svg>
             <div className="flex-1">
               <span className="whitespace-pre-wrap">{generateError}</span>
-              {partialStoryboardData && resumingEpisodeId && (
+              {partialStoryboardData && (
                 <div className="mt-2 flex items-center space-x-3">
                   <button
-                    onClick={() => handleGenerateScript(resumingEpisodeId, false, partialStoryboardData)}
+                    onClick={() => handleGenerateScript((partialStoryboardData.episodeId || resumingEpisodeId)!, false, partialStoryboardData)}
                     className="px-4 py-1.5 bg-orange-500 text-white text-sm rounded-lg hover:bg-orange-600 transition font-medium"
                   >
                     继续生成（从第 {partialStoryboardData.completedBatches + 1} 批恢复）
@@ -728,6 +732,11 @@ const Episodes: React.FC = () => {
             key={episode.id}
             episode={episode}
             onGenerateScript={(episodeId) => {
+              // 如果该分集有断点数据，直接续生成
+              if (partialStoryboardData && partialStoryboardData.episodeId === episodeId) {
+                handleGenerateScript(episodeId, false, partialStoryboardData);
+                return;
+              }
               if (availableModels.length > 0 && !selectedModelKey) {
                 setSelectedModelKey(`${availableModels[0].provider}_${availableModels[0].id}`);
               }
@@ -782,7 +791,7 @@ const Episodes: React.FC = () => {
                 onClick={() => {
                   const eid = modelSelectEpisodeId;
                   setModelSelectEpisodeId(null);
-                  if (eid) handleGenerateScript(eid);
+                  if (eid) handleGenerateScript(eid, false, partialStoryboardData || undefined);
                 }}
                 disabled={availableModels.length === 0}
                 className="flex-1 px-4 py-2.5 bg-black text-white text-sm rounded-lg hover:bg-gray-800 transition disabled:opacity-50 disabled:cursor-not-allowed"

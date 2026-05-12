@@ -15,18 +15,25 @@ router.post('/generate', async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   
+  let keepaliveTimer: NodeJS.Timeout | null = null;
+
   try {
     const { episodeContent, characters, scenes, provider, model, options } = req.body;
-    
+
     if (!episodeContent) {
       res.write(`event: error\ndata: ${JSON.stringify({ message: '缺少剧本内容' })}\n\n`);
       res.end();
       return;
     }
 
-    const config = provider 
+    const config = provider
       ? createApiConfig(provider, model)
       : createApiConfig('deepseek');
+
+    // 每30秒发送SSE心跳注释，防止Nginx代理超时
+    keepaliveTimer = setInterval(() => {
+      res.write(': keepalive\n\n');
+    }, 30000);
 
     // 发送进度回调
     const onProgress = (message: string, step?: number, totalSteps?: number) => {
@@ -49,13 +56,19 @@ router.post('/generate', async (req, res) => {
     );
 
     // 发送完成事件
+    if (keepaliveTimer) clearInterval(keepaliveTimer);
     res.write(`event: done\ndata: ${JSON.stringify({ shots })}\n\n`);
     res.end();
   } catch (error: any) {
+    if (keepaliveTimer) clearInterval(keepaliveTimer);
     const errorDetail = error?.message || error?.toString() || '分镜生成失败（未知原因）';
     console.error('Storyboard generate error:', errorDetail, error?.stack);
-    res.write(`event: error\ndata: ${JSON.stringify({ message: errorDetail })}\n\n`);
-    res.end();
+    try {
+      res.write(`event: error\ndata: ${JSON.stringify({ message: errorDetail })}\n\n`);
+      res.end();
+    } catch (writeErr) {
+      console.error('Failed to send error to client (connection already closed):', writeErr);
+    }
   }
 });
 
@@ -64,27 +77,34 @@ router.post('/split', async (req, res) => {
   // 禁用 socket 超时
   req.setTimeout(0);
   res.setTimeout(0);
-  
+
   // 设置 SSE 响应头
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
-  
+
+  let keepaliveTimer: NodeJS.Timeout | null = null;
+
   try {
     const { episodeContent, characters, scenes, provider, model, options } = req.body;
-    
+
     if (!episodeContent) {
       res.write(`event: error\ndata: ${JSON.stringify({ message: '缺少剧本内容' })}\n\n`);
       res.end();
       return;
     }
 
-    const config = provider 
+    const config = provider
       ? createApiConfig(provider, model)
       : createApiConfig('deepseek');
 
     const characterInfo = (characters || []).map((c: any) => `${c.name}: ${typeof c.description === 'object' ? JSON.stringify(c.description) : c.description}`).join('\n');
     const sceneInfo = (scenes || []).map((s: any) => `${s.name}: ${typeof s.description === 'object' ? JSON.stringify(s.description) : s.description}`).join('\n');
+
+    // 每30秒发送SSE心跳注释，防止Nginx代理超时
+    keepaliveTimer = setInterval(() => {
+      res.write(': keepalive\n\n');
+    }, 30000);
 
     // 发送进度回调
     const onProgress = (message: string, step?: number, totalSteps?: number) => {
@@ -103,9 +123,11 @@ router.post('/split', async (req, res) => {
     onProgress(`✅ 划分完成!共 ${shots.length} 个镜头`, 1, 1);
 
     // 发送完成事件
+    if (keepaliveTimer) clearInterval(keepaliveTimer);
     res.write(`event: done\ndata: ${JSON.stringify({ shots })}\n\n`);
     res.end();
   } catch (error: any) {
+    if (keepaliveTimer) clearInterval(keepaliveTimer);
     const errorDetail = error?.message || error?.toString() || '镜头划分失败（未知原因）';
     console.error('Storyboard split error:', errorDetail, error?.stack);
     res.write(`event: error\ndata: ${JSON.stringify({ message: errorDetail })}\n\n`);
@@ -118,15 +140,17 @@ router.post('/enrich-batch', async (req, res) => {
   // 禁用 socket 超时
   req.setTimeout(0);
   res.setTimeout(0);
-  
+
   // 设置 SSE 响应头
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
-  
+
+  let keepaliveTimer: NodeJS.Timeout | null = null;
+
   try {
     const { episodeContent, characters, scenes, shots, batchRange, usedContents, provider, model } = req.body;
-    
+
     if (!shots || !Array.isArray(shots)) {
       res.write(`event: error\ndata: ${JSON.stringify({ message: '缺少镜头数据' })}\n\n`);
       res.end();
@@ -139,12 +163,17 @@ router.post('/enrich-batch', async (req, res) => {
       return;
     }
 
-    const config = provider 
+    const config = provider
       ? createApiConfig(provider, model)
       : createApiConfig('deepseek');
 
     const characterInfo = (characters || []).map((c: any) => `${c.name}: ${typeof c.description === 'object' ? JSON.stringify(c.description) : c.description}`).join('\n');
     const sceneInfo = (scenes || []).map((s: any) => `${s.name}: ${typeof s.description === 'object' ? JSON.stringify(s.description) : s.description}`).join('\n');
+
+    // 每30秒发送SSE心跳注释，防止Nginx代理超时
+    keepaliveTimer = setInterval(() => {
+      res.write(': keepalive\n\n');
+    }, 30000);
 
     // 发送进度回调
     const onProgress = (message: string, step?: number, totalSteps?: number) => {
@@ -155,6 +184,9 @@ router.post('/enrich-batch', async (req, res) => {
     const onContentStream = (chunk: string) => {
       res.write(`event: content\ndata: ${JSON.stringify({ chunk })}\n\n`);
     };
+
+    // 在调用 enrichEachShot 之前发送进度确认连接活跃
+    res.write(`event: progress\ndata: ${JSON.stringify({ message: '开始处理本批次镜头...', phase: 'enriching' })}\n\n`);
 
     const { enrichedShots, usedContents: updatedUsedContents } = await enrichEachShot(
       shots,
@@ -171,13 +203,19 @@ router.post('/enrich-batch', async (req, res) => {
     );
 
     // 发送完成事件
+    if (keepaliveTimer) clearInterval(keepaliveTimer);
     res.write(`event: done\ndata: ${JSON.stringify({ enrichedShots, usedContents: updatedUsedContents })}\n\n`);
     res.end();
   } catch (error: any) {
+    if (keepaliveTimer) clearInterval(keepaliveTimer);
     const errorDetail = error?.message || error?.toString() || '镜头完善失败（未知原因）';
     console.error('Storyboard enrich-batch error:', errorDetail, error?.stack);
-    res.write(`event: error\ndata: ${JSON.stringify({ message: errorDetail })}\n\n`);
-    res.end();
+    try {
+      res.write(`event: error\ndata: ${JSON.stringify({ message: errorDetail })}\n\n`);
+      res.end();
+    } catch (writeErr) {
+      console.error('Failed to send error to client (connection already closed):', writeErr);
+    }
   }
 });
 

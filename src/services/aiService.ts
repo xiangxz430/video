@@ -132,6 +132,7 @@ export interface StoryboardResumeData {
   usedContents: string[];
   completedBatches: number;
   allShots: any[];
+  episodeId?: number;
 }
 
 /** 批次完成回调数据 */

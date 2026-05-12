@@ -252,7 +252,7 @@ async function fetchSSE<T>(
     } else if (result) {
       return result;
     } else {
-      throw new Error('服务端未返回完整结果');
+      throw new Error('连接中断，服务端未返回结果。可能原因：网络超时、服务端处理失败或代理断开连接。请重试。');
     }
   } catch (error: any) {
     // AbortError: 超时或主动取消 → 给出中文友好提示

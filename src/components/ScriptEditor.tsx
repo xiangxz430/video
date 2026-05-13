@@ -58,7 +58,7 @@ interface ScriptEditorProps {
   onFirstFrameRefModeChange?: (shotIndex: number, mode: 'only-ref' | 'ref-with-scene-char') => void;
   onLastFrameRefModeChange?: (shotIndex: number, mode: 'only-ref' | 'ref-with-scene-char') => void;
   // 参考图模式回调
-  onUploadReferenceImage?: (shotIndex: number) => void;
+  onUploadReferenceImage?: (shotIndex: number, localPath: string) => void;
   onRemoveReferenceImage?: (shotIndex: number, imgIndex: number) => void;
   onReferenceImagePromptChange?: (shotIndex: number, prompt: string) => void;
   // 图片生成模型选择
@@ -352,9 +352,8 @@ const ScriptEditor: React.FC<ScriptEditorProps> = ({
       const localPath = await uploadImage('frames');
       if (!localPath) return;
       
-      // 通过回调更新父组件
-      onUploadReferenceImage?.(shotIndex);
-      // 实际路径更新由父组件处理
+      // 通过回调更新父组件，传递上传的路径
+      onUploadReferenceImage?.(shotIndex, localPath);
     } catch (error) {
       console.error('上传参考图失败:', error);
       alert('上传参考图失败');

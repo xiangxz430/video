@@ -1,34 +1,29 @@
 /**
  * TokenPlan (百炼包月) 图片生成服务
  *
- * TokenPlan 是百炼的包月代理服务，通过 OpenAI-compatible API 提供
- * 图片生成能力。其 compatible-mode 端点将请求转发到百炼 DashScope 后端。
+ * TokenPlan 是百炼的包月代理服务，通过 compatible-mode API 提供图片生成能力。
  *
- * API 端点: POST {baseUrl}/images/generations
+ * API 端点: POST {baseUrl}/chat/completions
  * 认证方式: Bearer Token (TokenPlan API Key, sk-sp- 前缀)
  * 任务模式: 同步返回
  *
- * 两种请求格式（根据是否有参考图自动切换）:
+ * 文生图和图生图统一使用 messages + content 格式:
  *
- * 1. 文生图（无参考图）— OpenAI-compatible 格式:
- *    { model, prompt, size }
+ * 文生图:
+ *   { model, messages: [{role: "user", content: [{text: "提示词"}]}], parameters: {size} }
  *
- * 2. 图生图（有参考图）— DashScope 原生 input.messages 格式:
- *    { model, input: { messages: [{ role: "user", content: [
- *      { image: "data:image/jpeg;base64,..." },
- *      { text: "prompt..." }
- *    ]}]}, parameters: { size } }
- *    注意: TokenPlan 的 images 数组不支持 base64 data URL（报 url error），
- *    必须用 DashScope 原生的 content[] 格式
+ * 图生图:
+ *   { model, messages: [{role: "user", content: [
+ *     {image: "https://xxx.png"},
+ *     {text: "提示词"}
+ *   ]}], parameters: {size} }
  *
- * 宽高比映射 (qwen-image-2.0 官方推荐分辨率，使用 DashScope * 分隔符):
+ * 响应格式:
+ *   { output: { choices: [{ message: { content: [{ image: "url" }] } }] } }
+ *
+ * 宽高比映射 (qwen-image-2.0 官方推荐分辨率，使用 * 分隔符):
  *   16:9 → 2688*1536, 9:16 → 1536*2688, 1:1 → 2048*2048
  *   4:3 → 2368*1728, 3:4 → 1728*2368
- *
- * 响应取值（兼容多种格式）:
- *   - data.data[0].url (OpenAI-compatible)
- *   - data.output.results[0].url (DashScope 原生)
- *   - data.output.choices[0].message.content[0].image (DashScope 原生)
  */
 import { recordAICall, sanitizeAICallBody } from '../logContext.js';
 // 宽高比 → 像素尺寸映射 (qwen-image-2.0 官方推荐分辨率，2K 基准)
@@ -40,27 +35,20 @@ const ASPECT_RATIO_SIZE_MAP = {
     '3:4': '1728*2368',
 };
 /**
- * 将分辨率快捷方式 (1k/2k/4k) 转换为 DashScope 兼容的具体像素尺寸
- *
- * DashScope / Qwen-Image-2.0 不接受 '2k' 等简写，必须传入具体像素尺寸
- * （如 '2688*1536'）。根据宽高比从官方推荐值中选择对应尺寸。
+ * 将分辨率快捷方式 (1k/2k/4k) 转换为具体像素尺寸
  */
 function resolutionShortcutToSize(shortcut, aspectRatio) {
-    // 使用官方推荐尺寸作为基准
     const ar = aspectRatio && ASPECT_RATIO_SIZE_MAP[aspectRatio]
         ? aspectRatio
-        : '16:9'; // 默认 16:9
+        : '16:9';
     const [w, h] = ASPECT_RATIO_SIZE_MAP[ar].split('*').map(Number);
     if (shortcut === '4k') {
         return `${w * 2}*${h * 2}`;
     }
-    // 2k (及自动升级的 1k)
     return `${w}*${h}`;
 }
 /**
- * 标准化 size 参数为 DashScope 兼容格式
- * - 将 'x' 分隔符替换为 '*'
- * - 保留已是 '*' 分隔符的格式
+ * 标准化 size 参数为 DashScope 兼容格式（* 分隔符）
  */
 function normalizeSizeForDashScope(size) {
     if (/^\d+x\d+$/i.test(size)) {
@@ -69,15 +57,15 @@ function normalizeSizeForDashScope(size) {
     return size;
 }
 /**
- * 同步调用 TokenPlan 图片生成 API
+ * 调用 TokenPlan 图片生成 API
  *
- * 使用 OpenAI-compatible /images/generations 端点。
- * TokenPlan 作为代理会将请求转发到百炼 DashScope 后端。
+ * 统一使用 /chat/completions 端点，messages 格式。
+ * 文生图和图生图仅在 content 数组中是否包含 image 对象上有区别。
  */
 export async function generateTokenPlanImage(config, params) {
     const baseUrl = config.baseUrl || 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1';
     const model = config.model || 'qwen-image-2.0';
-    const endpoint = `${baseUrl}/images/generations`;
+    const endpoint = `${baseUrl}/chat/completions`;
     const startTime = Date.now();
     // 解析 size 参数
     const resolveSize = () => {
@@ -108,38 +96,33 @@ export async function generateTokenPlanImage(config, params) {
         }
     };
     const actualSize = resolveSize();
-    // 过滤有效参考图片
+    // 构建 content 数组
+    const content = [];
+    // 过滤有效参考图片并添加到 content
     const validImages = params.referenceImages?.filter(img => img.startsWith('http://') ||
         img.startsWith('https://') ||
         img.startsWith('data:image/')) || [];
-    const requestBody = { model };
     if (validImages.length > 0) {
-        // 图生图模式：使用 DashScope 原生 input.messages 格式
-        // TokenPlan 的 images 数组格式不支持 base64 data URL（会报 url error），
-        // 需转换为 DashScope 原生的 content[] 格式，该格式原生支持 base64 图片
-        const content = [];
         for (const img of validImages) {
             content.push({ image: img });
         }
-        content.push({ text: params.prompt });
-        requestBody.input = {
-            messages: [{
-                    role: 'user',
-                    content,
-                }],
-        };
-        requestBody.parameters = { size: actualSize };
-        console.log(`TokenPlan 图生图模式（DashScope原生格式），参考图片数: ${validImages.length}`);
+        console.log(`TokenPlan 图生图模式，参考图片数: ${validImages.length}`);
     }
     else {
-        // 文生图模式：使用标准 OpenAI-compatible 格式
-        requestBody.prompt = params.prompt;
-        requestBody.size = actualSize;
         if (params.referenceImages?.length) {
             console.warn('⚠️ TokenPlan 参考图片格式无效，将使用文生图模式');
         }
+        console.log('TokenPlan 文生图模式');
     }
-    // 180 秒超时（图片生成可能较慢）
+    // 提示词始终作为 text 对象
+    content.push({ text: params.prompt });
+    // 统一请求体：model + messages + parameters
+    const requestBody = {
+        model,
+        messages: [{ role: 'user', content }],
+        parameters: { size: actualSize },
+    };
+    // 180 秒超时
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 180_000);
     try {
@@ -147,18 +130,9 @@ export async function generateTokenPlanImage(config, params) {
         const refImgPreview = refImgCount > 0
             ? `[${refImgCount} 张, 首张前60字符: ${validImages[0].substring(0, 60)}...]`
             : '无';
-        const sizeForLog = validImages.length > 0 ? requestBody.parameters?.size : requestBody.size;
-        console.log(`TokenPlan 图片生成请求: model=${model}, size=${sizeForLog}, 参考图=${refImgPreview}`);
+        console.log(`TokenPlan 图片生成请求: model=${model}, size=${actualSize}, endpoint=${endpoint}, 参考图=${refImgPreview}`);
         // 日志中省略 base64 内容
-        const logSafe = { ...requestBody };
-        if (logSafe.input?.messages?.[0]?.content) {
-            logSafe.input = {
-                messages: [{
-                        role: 'user',
-                        content: `[${refImgCount} image(s) + prompt omitted]`,
-                    }],
-            };
-        }
+        const logSafe = { ...requestBody, messages: [{ role: 'user', content: refImgCount > 0 ? `[${refImgCount} image(s) + prompt]` : `[prompt only]` }] };
         console.log(`TokenPlan 完整请求体: ${JSON.stringify(logSafe)}`);
         const response = await fetch(endpoint, {
             method: 'POST',
@@ -193,19 +167,19 @@ export async function generateTokenPlanImage(config, params) {
             throw new Error(errorMessage);
         }
         const data = await response.json();
-        // 尝试多种响应格式提取图片 URL
+        // 从响应中提取图片 URL
+        // 主格式: data.output.choices[0].message.content[0].image
         let imageUrl;
-        // 格式1: data.data[0].url (OpenAI-compatible)
-        if (data.data?.[0]?.url) {
+        if (data.output?.choices?.[0]?.message?.content?.[0]?.image) {
+            imageUrl = data.output.choices[0].message.content[0].image;
+        }
+        // 兼容格式: data.data[0].url
+        else if (data.data?.[0]?.url) {
             imageUrl = data.data[0].url;
         }
-        // 格式2: data.output.results[0].url (DashScope 透传)
+        // 兼容格式: data.output.results[0].url
         else if (data.output?.results?.[0]?.url) {
             imageUrl = data.output.results[0].url;
-        }
-        // 格式3: data.output.choices[0].message.content[0].image
-        else if (data.output?.choices?.[0]?.message?.content?.[0]?.image) {
-            imageUrl = data.output.choices[0].message.content[0].image;
         }
         if (!imageUrl) {
             recordAICall({

@@ -1784,7 +1784,7 @@ const EpisodeEdit: React.FC = () => {
   };
 
   // 处理上传参考图（参考图模式）
-  const handleUploadReferenceImage = async (shotIndex: number) => {
+  const handleUploadReferenceImage = async (shotIndex: number, localPath?: string) => {
     try {
       const segment = localSegments[selectedSegmentIndex];
       if (!segment || !segment.shots || !segment.shots[shotIndex]) return;
@@ -1797,14 +1797,14 @@ const EpisodeEdit: React.FC = () => {
         return;
       }
       
-      // 使用 uploadImage 上传图片
-      const localPath = await uploadImage('frames');
-      if (!localPath) return;
+      // 使用传入的 localPath，如果没有则调用 uploadImage
+      const imagePath = localPath || await uploadImage('frames');
+      if (!imagePath) return;
       
       const updatedShots = [...segment.shots];
       updatedShots[shotIndex] = {
         ...shot,
-        referenceImages: [...currentImages, localPath]
+        referenceImages: [...currentImages, imagePath]
       };
       const targetDbId = segment.dbId;
 
@@ -2954,40 +2954,72 @@ const EpisodeEdit: React.FC = () => {
           <div className="flex-1 overflow-hidden min-h-0">
             <ScriptEditor 
               segment={{
-                // 传递所有 localSegments 作为 shots
-                shots: localSegments.map((seg, idx) => {
-                  const segData = parseSegmentContent(seg.content || '{}');
-                  return {
-                    id: seg.dbId || seg.id,
+                // 优先从 localSegments[selectedSegmentIndex].shots 读取（handlers 实时更新此数据）
+                // 回退到从各 segment.content 解析（初始加载时）
+                shots: (localSegments[selectedSegmentIndex]?.shots || []).length > 0
+                  ? (localSegments[selectedSegmentIndex]?.shots ?? []).map((shot: any, idx: number) => ({
+                    id: shot.id || localSegments[idx]?.dbId || idx + 1,
                     shotNumber: idx + 1,
-                    shotType: segData.shotType,
-                    cameraAngle: segData.cameraAngle,
-                    lens: segData.lens,
-                    description: segData.description,
-                    action: segData.action,
-                    scene: segData.scene,
-                    characters: segData.characters,
-                    duration: segData.duration || 5,
-                    dialogue: segData.dialogue,
-                    soundEffect: segData.soundEffect,
-                    cameraMovement: segData.cameraMovement,
-                    imagePrompt: segData.imagePrompt,
-                    videoUrl: segData.videoUrl,
-                    localVideoPath: segData.localVideoPath,
-                    firstFrameImage: segData.firstFrameImage,
-                    lastFrameImage: segData.lastFrameImage,
-                    firstFrameLocalPath: segData.firstFrameLocalPath,
-                    lastFrameLocalPath: segData.lastFrameLocalPath,
-                    status: segData.status,
-                    videoGenMode: segData.videoGenMode,
-                    firstFramePrompt: segData.firstFramePrompt,
-                    lastFramePrompt: segData.lastFramePrompt,
-                    firstFrameRefMode: segData.firstFrameRefMode,
-                    referenceImages: segData.referenceImages,
-                    referenceImagePrompt: segData.referenceImagePrompt,
-                    videoHistory: segData.videoHistory
-                  };
-                })
+                    shotType: shot.shotType,
+                    cameraAngle: shot.cameraAngle,
+                    lens: shot.lens,
+                    description: shot.description,
+                    action: shot.action,
+                    scene: shot.scene,
+                    characters: shot.characters,
+                    duration: shot.duration || 5,
+                    dialogue: shot.dialogue,
+                    soundEffect: shot.soundEffect,
+                    cameraMovement: shot.cameraMovement,
+                    imagePrompt: shot.imagePrompt,
+                    videoUrl: shot.videoUrl,
+                    localVideoPath: shot.localVideoPath,
+                    firstFrameImage: shot.firstFrameImage,
+                    lastFrameImage: shot.lastFrameImage,
+                    firstFrameLocalPath: shot.firstFrameLocalPath,
+                    lastFrameLocalPath: shot.lastFrameLocalPath,
+                    status: shot.status,
+                    videoGenMode: shot.videoGenMode,
+                    firstFramePrompt: shot.firstFramePrompt,
+                    lastFramePrompt: shot.lastFramePrompt,
+                    firstFrameRefMode: shot.firstFrameRefMode,
+                    referenceImages: shot.referenceImages,
+                    referenceImagePrompt: shot.referenceImagePrompt,
+                    videoHistory: shot.videoHistory
+                  }))
+                  : localSegments.map((seg, idx) => {
+                    const segData = parseSegmentContent(seg.content || '{}');
+                    return {
+                      id: seg.dbId || seg.id,
+                      shotNumber: idx + 1,
+                      shotType: segData.shotType,
+                      cameraAngle: segData.cameraAngle,
+                      lens: segData.lens,
+                      description: segData.description,
+                      action: segData.action,
+                      scene: segData.scene,
+                      characters: segData.characters,
+                      duration: segData.duration || 5,
+                      dialogue: segData.dialogue,
+                      soundEffect: segData.soundEffect,
+                      cameraMovement: segData.cameraMovement,
+                      imagePrompt: segData.imagePrompt,
+                      videoUrl: segData.videoUrl,
+                      localVideoPath: segData.localVideoPath,
+                      firstFrameImage: segData.firstFrameImage,
+                      lastFrameImage: segData.lastFrameImage,
+                      firstFrameLocalPath: segData.firstFrameLocalPath,
+                      lastFrameLocalPath: segData.lastFrameLocalPath,
+                      status: segData.status,
+                      videoGenMode: segData.videoGenMode,
+                      firstFramePrompt: segData.firstFramePrompt,
+                      lastFramePrompt: segData.lastFramePrompt,
+                      firstFrameRefMode: segData.firstFrameRefMode,
+                      referenceImages: segData.referenceImages,
+                      referenceImagePrompt: segData.referenceImagePrompt,
+                      videoHistory: segData.videoHistory
+                    };
+                  })
               }}
               episodeTitle={currentEpisode?.title || ''}
               episodeContent={currentEpisode?.content || ''}

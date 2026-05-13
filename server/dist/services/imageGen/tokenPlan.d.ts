@@ -1,40 +1,35 @@
 /**
  * TokenPlan (百炼包月) 图片生成服务
  *
- * TokenPlan 是百炼的包月代理服务，通过 OpenAI-compatible API 提供
- * 图片生成能力。其 compatible-mode 端点将请求转发到百炼 DashScope 后端。
+ * TokenPlan 是百炼的包月代理服务，通过 compatible-mode API 提供图片生成能力。
  *
- * API 端点: POST {baseUrl}/images/generations
+ * API 端点: POST {baseUrl}/chat/completions
  * 认证方式: Bearer Token (TokenPlan API Key, sk-sp- 前缀)
  * 任务模式: 同步返回
  *
- * 两种请求格式（根据是否有参考图自动切换）:
+ * 文生图和图生图统一使用 messages + content 格式:
  *
- * 1. 文生图（无参考图）— OpenAI-compatible 格式:
- *    { model, prompt, size }
+ * 文生图:
+ *   { model, messages: [{role: "user", content: [{text: "提示词"}]}], parameters: {size} }
  *
- * 2. 图生图（有参考图）— DashScope 原生 input.messages 格式:
- *    { model, input: { messages: [{ role: "user", content: [
- *      { image: "data:image/jpeg;base64,..." },
- *      { text: "prompt..." }
- *    ]}]}, parameters: { size } }
- *    注意: TokenPlan 的 images 数组不支持 base64 data URL（报 url error），
- *    必须用 DashScope 原生的 content[] 格式
+ * 图生图:
+ *   { model, messages: [{role: "user", content: [
+ *     {image: "https://xxx.png"},
+ *     {text: "提示词"}
+ *   ]}], parameters: {size} }
  *
- * 宽高比映射 (qwen-image-2.0 官方推荐分辨率，使用 DashScope * 分隔符):
+ * 响应格式:
+ *   { output: { choices: [{ message: { content: [{ image: "url" }] } }] } }
+ *
+ * 宽高比映射 (qwen-image-2.0 官方推荐分辨率，使用 * 分隔符):
  *   16:9 → 2688*1536, 9:16 → 1536*2688, 1:1 → 2048*2048
  *   4:3 → 2368*1728, 3:4 → 1728*2368
- *
- * 响应取值（兼容多种格式）:
- *   - data.data[0].url (OpenAI-compatible)
- *   - data.output.results[0].url (DashScope 原生)
- *   - data.output.choices[0].message.content[0].image (DashScope 原生)
  */
 import type { ApiConfig, ImageGenParams } from '../../types/index.js';
 /**
- * 同步调用 TokenPlan 图片生成 API
+ * 调用 TokenPlan 图片生成 API
  *
- * 使用 OpenAI-compatible /images/generations 端点。
- * TokenPlan 作为代理会将请求转发到百炼 DashScope 后端。
+ * 统一使用 /chat/completions 端点，messages 格式。
+ * 文生图和图生图仅在 content 数组中是否包含 image 对象上有区别。
  */
 export declare function generateTokenPlanImage(config: ApiConfig, params: ImageGenParams): Promise<string>;

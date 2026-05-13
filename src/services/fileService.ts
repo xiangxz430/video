@@ -146,6 +146,35 @@ export async function saveBase64Image(base64Data: string, subfolder?: string): P
   }
 }
 
+// 通用异步重试辅助函数（内部使用，不导出）
+// shouldRetry 回调返回 true 表示该错误值得重试，false 表示立即抛出
+async function retryAsync<T>(
+  fn: () => Promise<T>,
+  maxRetries: number,
+  baseDelayMs: number,
+  shouldRetry?: (error: any) => boolean
+): Promise<T> {
+  let lastError: any;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      lastError = error;
+      if (attempt < maxRetries) {
+        if (shouldRetry && !shouldRetry(error)) {
+          console.log(`retryAsync: 错误不可重试，立即抛出:`, error?.message || error);
+          throw error;
+        }
+        const delay = baseDelayMs * Math.pow(2, attempt);
+        console.log(`retryAsync: 第 ${attempt + 1} 次重试（共 ${maxRetries} 次），${delay}ms 后执行...`);
+        pageLog(`[文件服务] 第 ${attempt + 1} 次重试，${(delay / 1000).toFixed(1)}s 后执行...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  throw lastError;
+}
+
 // 将 URL 图片保存到本地（通过 Rust 端下载）
 // 按日期分文件夹存储，格式：images/YYYY-MM-DD/xxx.png
 export async function saveUrlImage(url: string, subfolder?: string): Promise<string | null> {
@@ -175,31 +204,57 @@ export async function saveUrlImage(url: string, subfolder?: string): Promise<str
       }
       console.log('saveUrlImage: Base64 解码成功，大小:', bytes.length, 'bytes (', (bytes.length / 1024).toFixed(2), 'KB )');
     } else {
-      // 使用 Rust 端下载图片
-      const result = await invoke<{
-        success: boolean;
-        data?: number[];
-        content_type?: string;
-        error?: string;
-      }>('download_image', { url });
+      // 使用 Rust 端下载图片（带重试机制，最多3次重试，指数退避1s/2s/4s）
+      const downloadResult = await retryAsync(
+        async () => {
+          const result = await invoke<{
+            success: boolean;
+            data?: number[];
+            content_type?: string;
+            error?: string;
+          }>('download_image', { url });
+          
+          console.log('saveUrlImage: 下载结果:', result.success, '错误:', result.error || '无');
+          
+          if (!result.success) {
+            const errDetail = result.error || '未知下载错误';
+            const error: any = new Error(errDetail);
+            // 标记是否为 HTTP 4xx 错误，供 shouldRetry 判断
+            error.is4xx = /\b4\d{2}\b/.test(errDetail);
+            console.error('saveUrlImage: Rust下载失败:', errDetail);
+            pageLog(`[文件服务] ⚠️ 图片下载失败: ${errDetail}`);
+            throw error;
+          }
+          
+          if (!result.data || result.data.length === 0) {
+            console.error('saveUrlImage: 下载的数据为空');
+            pageLog('[文件服务] ⚠️ 下载的图片数据为空');
+            throw new Error('下载的数据为空');
+          }
+          
+          return result;
+        },
+        3,     // maxRetries: 最多重试3次
+        1000,  // baseDelayMs: 基础延迟1秒（指数退避: 1s, 2s, 4s）
+        (error: any) => {
+          // HTTP 4xx 错误不重试（如404、403、401）
+          if (error?.is4xx) {
+            console.log('saveUrlImage: HTTP 4xx 错误，不重试:', error.message);
+            return false;
+          }
+          const msg = error?.message || String(error);
+          if (/\b4\d{2}\b/.test(msg)) {
+            console.log('saveUrlImage: 检测到4xx状态码，不重试:', msg);
+            return false;
+          }
+          // 网络错误、超时、数据为空等均重试
+          return true;
+        }
+      );
       
-      console.log('saveUrlImage: 下载结果:', result.success, '错误:', result.error || '无');
-      
-      if (!result.success) {
-        const errDetail = result.error || '未知下载错误';
-        console.error('saveUrlImage: Rust下载失败:', errDetail);
-        pageLog(`[文件服务] ⚠️ 图片下载失败: ${errDetail}`);
-        return null; // 不再 fallback 到远程 URL
-      }
-      
-      if (!result.data || result.data.length === 0) {
-        console.error('saveUrlImage: 下载的数据为空');
-        pageLog('[文件服务] ⚠️ 下载的图片数据为空');
-        return null;
-      }
-      
-      bytes = new Uint8Array(result.data);
-      contentType = result.content_type || '';
+      bytes = new Uint8Array(downloadResult.data!);
+      contentType = downloadResult.content_type || '';
+      console.log('saveUrlImage: 下载成功');
     }
     
     console.log('saveUrlImage: 数据大小:', bytes.length, 'bytes (', (bytes.length / 1024).toFixed(2), 'KB )');
@@ -246,14 +301,27 @@ export async function saveUrlImage(url: string, subfolder?: string): Promise<str
     const destPath = await join(targetDir, fileName);
     console.log('saveUrlImage: 保存路径:', destPath);
     
-    await writeFile(destPath, bytes);
-    console.log('saveUrlImage: 文件写入成功，大小:', bytes.length);
+    // 写入文件（带1次重试，防止临时文件锁等问题）
+    await retryAsync(
+      async () => {
+        try {
+          await writeFile(destPath, bytes);
+          console.log('saveUrlImage: 文件写入成功，大小:', bytes.length);
+        } catch (writeError: any) {
+          console.log('saveUrlImage: 文件写入失败:', writeError?.message || writeError);
+          throw writeError;
+        }
+      },
+      1,    // maxRetries: 最多重试1次
+      500   // baseDelayMs: 500ms
+    );
+    
     return destPath;
   } catch (error: any) {
     const errMsg = error?.message || String(error);
-    console.error('saveUrlImage: 保存失败:', error);
-    pageLog(`[文件服务] ❌ 图片保存失败: ${errMsg}`);
-    return null; // 下载/保存失败，返回 null 让调用方使用远程 URL
+    console.error('saveUrlImage: 保存失败（已耗尽重试次数）:', error);
+    pageLog(`[文件服务] ❌ 图片保存失败（已重试）: ${errMsg}`);
+    return null;
   }
 }
 

@@ -77,8 +77,8 @@ def main():
     # Extract tar
     exec_cmd("Extract tar archive", "cd /opt && tar xzf server-deploy.tar.gz")
     
-    # Copy to video-server and clean up
-    exec_cmd("Copy to video-server", "cp -rf /opt/server/* /opt/video-server/ && rm -rf /opt/server")
+    # Ensure target directory exists, then copy
+    exec_cmd("Copy to video-server", "mkdir -p /opt/video-server && cp -rf /opt/server/* /opt/video-server/ && rm -rf /opt/server")
     
     # Install dependencies
     exec_cmd("Install dependencies", "source ~/.nvm/nvm.sh && cd /opt/video-server && npm install 2>&1 | tail -5")

@@ -1,31 +1,62 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import {
+  isMongoConnected,
+  getAllApiKeys,
+  saveApiKey as saveApiKeyToDb,
+  deleteApiKeyFromDb,
+  updateApiKeyInDb,
+  bulkUpdateLastUsed,
+} from './mongoService.js';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const KEYS_FILE = path.join(DATA_DIR, 'api-keys.json');
 
 // ========== 内存缓存层（消除每次请求的磁盘 I/O） ==========
 // 性能关键：validateApiKey 在每个请求的 auth 中间件中被调用，
-// 不能每次都读写文件。使用内存缓存 + 延迟持久化策略：
-//   - 启动时从磁盘加载到内存
-//   - 读取操作直接命中内存（0 磁盘 I/O）
-//   - lastUsedAt 更新：仅修改内存，每 60 秒最多持久化一次
-//   - 写操作（增/删/改）：立即持久化到磁盘
+// 不能每次都读写文件/数据库。使用内存缓存 + 延迟持久化策略：
+//   - 启动时从 MongoDB 加载到内存（降级时从磁盘加载）
+//   - 读取操作直接命中内存（0 I/O）
+//   - lastUsedAt 更新：仅修改内存，每 60 秒批量同步到 MongoDB
+//   - 写操作（增/删/改）：立即持久化到 MongoDB
 
 let keysCache: KeysData | null = null;
 let lastUsedDirty = false;
 let lastUsedFlushTimer: ReturnType<typeof setTimeout> | null = null;
 const LAST_USED_FLUSH_INTERVAL = 60_000; // 60秒
 
-function flushLastUsed(): void {
+// MongoDB 是否可用（降级标志）
+let useMongoDb = false;
+
+async function flushLastUsed(): Promise<void> {
+  if (!lastUsedDirty || !keysCache) return;
+
+  if (useMongoDb) {
+    try {
+      const updates = keysCache.keys
+        .filter(k => k.lastUsedAt)
+        .map(k => ({ id: k.id, lastUsedAt: k.lastUsedAt! }));
+      await bulkUpdateLastUsed(updates);
+      lastUsedDirty = false;
+    } catch (error) {
+      console.error('[ApiKeyService] 刷新 lastUsedAt 到 MongoDB 失败:', error);
+      // 降级到文件
+      flushLastUsedToFile();
+    }
+  } else {
+    flushLastUsedToFile();
+  }
+}
+
+function flushLastUsedToFile(): void {
   if (!lastUsedDirty || !keysCache) return;
   try {
     ensureDataFile();
     fs.writeFileSync(KEYS_FILE, JSON.stringify(keysCache, null, 2), 'utf-8');
     lastUsedDirty = false;
   } catch (error) {
-    console.error('[ApiKeyService] 刷新 lastUsedAt 失败:', error);
+    console.error('[ApiKeyService] 刷新 lastUsedAt 到文件失败:', error);
   }
 }
 
@@ -40,9 +71,9 @@ function markLastUsedDirty(): void {
 }
 
 // 进程退出前保存
-process.on('beforeExit', flushLastUsed);
-process.on('SIGTERM', () => { flushLastUsed(); process.exit(0); });
-process.on('SIGINT', () => { flushLastUsed(); process.exit(0); });
+process.on('beforeExit', () => { flushLastUsed(); });
+process.on('SIGTERM', () => { flushLastUsedToFile(); process.exit(0); });
+process.on('SIGINT', () => { flushLastUsedToFile(); process.exit(0); });
 
 export interface ApiKeyRecord {
   id: string;
@@ -67,30 +98,49 @@ function ensureDataFile(): void {
   }
 }
 
-// 读取所有 keys（仅启动/强制刷新时调用，正常流程走内存缓存）
-function loadKeys(): KeysData {
+// 从文件加载 keys（降级模式使用）
+function loadKeysFromFile(): KeysData {
   ensureDataFile();
   const content = fs.readFileSync(KEYS_FILE, 'utf-8');
   const parsed = JSON.parse(content) as KeysData;
-  keysCache = parsed; // 同步更新缓存
+  keysCache = parsed;
   return parsed;
 }
 
-// 获取内存缓存（若未初始化则从磁盘加载）
-function getCache(): KeysData {
-  if (!keysCache) {
-    keysCache = loadKeys();
+// 从 MongoDB 加载 keys 到内存缓存
+export async function loadFromDatabase(): Promise<void> {
+  if (!isMongoConnected()) {
+    console.warn('[ApiKeyService] MongoDB 未连接，降级到文件模式');
+    useMongoDb = false;
+    loadKeysFromFile();
+    return;
   }
-  return keysCache;
+
+  try {
+    const keys = await getAllApiKeys();
+    keysCache = { keys };
+    useMongoDb = true;
+    console.log(`[ApiKeyService] 已从 MongoDB 加载 ${keys.length} 个 API Key`);
+  } catch (error) {
+    console.error('[ApiKeyService] 从 MongoDB 加载失败，降级到文件模式:', error);
+    useMongoDb = false;
+    loadKeysFromFile();
+  }
 }
 
-// 保存 keys（带错误处理，防止写入失败导致进程崩溃）
-function saveKeys(data: KeysData): void {
+// 获取内存缓存（若未初始化则从文件加载作为降级）
+function getCache(): KeysData {
+  if (!keysCache) {
+    loadKeysFromFile();
+  }
+  return keysCache!;
+}
+
+// 保存 keys 到文件（降级备份用）
+function saveKeysToFile(data: KeysData): void {
   try {
     ensureDataFile();
     fs.writeFileSync(KEYS_FILE, JSON.stringify(data, null, 2), 'utf-8');
-    keysCache = data;   // 同步更新内存缓存
-    lastUsedDirty = false;
   } catch (error) {
     console.error('[ApiKeyService] 保存密钥文件失败:', error);
   }
@@ -115,7 +165,17 @@ export function generateApiKey(name: string): ApiKeyRecord {
 
   const data = getCache();
   data.keys.push(record);
-  saveKeys(data);
+  keysCache = data;
+
+  // 异步写入 MongoDB（不阻塞响应）
+  if (useMongoDb) {
+    saveApiKeyToDb(record).catch(err => {
+      console.error('[ApiKeyService] 保存到 MongoDB 失败:', err);
+      saveKeysToFile(data); // 降级写文件
+    });
+  } else {
+    saveKeysToFile(data);
+  }
 
   return record;
 }
@@ -152,7 +212,16 @@ export function deleteApiKey(id: string): boolean {
     return false;
   }
   data.keys.splice(index, 1);
-  saveKeys(data);
+  keysCache = data;
+
+  if (useMongoDb) {
+    deleteApiKeyFromDb(id).catch(err => {
+      console.error('[ApiKeyService] 从 MongoDB 删除失败:', err);
+      saveKeysToFile(data);
+    });
+  } else {
+    saveKeysToFile(data);
+  }
   return true;
 }
 
@@ -164,12 +233,21 @@ export function toggleApiKey(id: string, enabled: boolean): boolean {
     return false;
   }
   record.enabled = enabled;
-  saveKeys(data);
+  keysCache = data;
+
+  if (useMongoDb) {
+    updateApiKeyInDb(id, { enabled }).catch(err => {
+      console.error('[ApiKeyService] 更新 MongoDB 失败:', err);
+      saveKeysToFile(data);
+    });
+  } else {
+    saveKeysToFile(data);
+  }
   return true;
 }
 
 // 验证 key 是否有效（供 auth 中间件使用）
-// 性能优化：直接使用内存缓存，不读磁盘，lastUsedAt 延迟批量写回
+// 性能优化：直接使用内存缓存，不读磁盘/数据库，lastUsedAt 延迟批量写回
 // 返回 keyId（供日志按用户分区使用），无效返回 null
 export function validateApiKey(key: string): string | null {
   const data = getCache();  // 内存读取，0 I/O
@@ -188,11 +266,10 @@ export function keyExists(key: string): boolean {
   return data.keys.some((k) => k.key === key);
 }
 
-// 初始化：如果环境变量中有 API_KEY 且不在 json 文件中，自动添加为第一个 key
-export function initializeFromEnv(envApiKey: string): void {
+// 初始化：如果环境变量中有 API_KEY 且不在数据库中，自动添加为第一个 key
+export async function initializeFromEnv(envApiKey: string): Promise<void> {
   if (!envApiKey) return;
 
-  ensureDataFile();
   const data = getCache();
 
   // 检查是否已存在
@@ -206,7 +283,18 @@ export function initializeFromEnv(envApiKey: string): void {
       enabled: true,
     };
     data.keys.push(record);
-    saveKeys(data);
+    keysCache = data;
+
+    if (useMongoDb) {
+      try {
+        await saveApiKeyToDb(record);
+      } catch (err) {
+        console.error('[ApiKeyService] 保存默认密钥到 MongoDB 失败:', err);
+        saveKeysToFile(data);
+      }
+    } else {
+      saveKeysToFile(data);
+    }
     console.log('[API Key] 已从环境变量导入默认密钥');
   }
 }

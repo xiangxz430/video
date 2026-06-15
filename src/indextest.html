@@ -1,0 +1,1264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TeamThink · 企业级 AI 编程智能体平台</title>
+
+  <!-- React 18 UMD -->
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <style>
+    /* ===== Global reset ===== */
+    html, body { margin: 0; padding: 0; }
+    #root { min-height: 100vh; }
+
+    /* ====== TeamThink Welcome page · scoped global styles ====== */
+    .tt-page {
+      --accent: #5b6cff;
+      --accent-2: #8b5cf6;
+      --bg: #fafafa;
+      --bg-elev: #ffffff;
+      --ink: #0b0d12;
+      --ink-soft: #5b6271;
+      --line: #ececf1;
+      --radius: 20px;
+      --radius-sm: 12px;
+      --shadow-sm: 0 1px 2px rgba(11, 13, 18, 0.04), 0 4px 12px rgba(11, 13, 18, 0.04);
+      --shadow-md: 0 8px 24px rgba(11, 13, 18, 0.06), 0 32px 64px -16px rgba(11, 13, 18, 0.1);
+      --density-pad: 28px;
+      --scale: 1;
+      --grid-line: rgba(11, 13, 18, 0.05);
+
+      background: var(--bg);
+      color: var(--ink);
+      font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      font-size: calc(15px * var(--scale));
+      min-height: 100vh;
+    }
+
+    .tt-page[data-mode='dark'] {
+      --bg: #0a0b10;
+      --bg-elev: #12141c;
+      --ink: #f1f3f8;
+      --ink-soft: #9aa0b4;
+      --line: #232636;
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
+      --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4), 0 32px 64px -16px rgba(0, 0, 0, 0.6);
+      --grid-line: rgba(255, 255, 255, 0.04);
+    }
+
+    .tt-page,
+    .tt-page *,
+    .tt-page *::before,
+    .tt-page *::after {
+      box-sizing: border-box;
+    }
+
+    .tt-page .mono { font-family: 'JetBrains Mono', monospace; }
+    .tt-page a { color: inherit; text-decoration: none; }
+    .tt-page button { font: inherit; cursor: pointer; }
+
+    .tt-page h1,
+    .tt-page h2,
+    .tt-page h3,
+    .tt-page h4 {
+      margin: 0;
+      letter-spacing: -0.02em;
+      font-weight: 700;
+    }
+
+    .tt-page p {
+      margin: 0;
+      color: var(--ink-soft);
+      line-height: 1.6;
+    }
+
+    .tt-page .wrap {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 0 28px;
+    }
+
+    .tt-page section {
+      padding: clamp(64px, 9vw, 120px) 0;
+    }
+
+    .tt-page .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      border: 1px solid var(--line);
+      border-radius: 100px;
+      font-size: 12px;
+      color: var(--ink-soft);
+      background: var(--bg-elev);
+    }
+
+    .tt-page .eyebrow .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 0 4px rgba(91, 108, 255, 0.18);
+    }
+
+    .tt-page .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 20px;
+      border-radius: 100px;
+      font-weight: 600;
+      font-size: 14px;
+      border: 1px solid transparent;
+      transition: transform 0.15s ease, background 0.2s ease, border-color 0.2s ease;
+    }
+
+    .tt-page .btn-primary {
+      background: var(--ink);
+      color: var(--bg);
+    }
+
+    .tt-page .btn-primary:hover { transform: translateY(-1px); }
+
+    .tt-page .btn-ghost {
+      background: transparent;
+      color: var(--ink);
+      border-color: var(--line);
+    }
+
+    .tt-page .btn-ghost:hover { border-color: var(--ink); }
+
+    .tt-page .nav {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      backdrop-filter: blur(14px);
+      background: color-mix(in oklab, var(--bg) 85%, transparent);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .tt-page .nav-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+    }
+
+    .tt-page .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .tt-page .brand-mark {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: conic-gradient(from 210deg, var(--accent), var(--accent-2), var(--accent));
+      position: relative;
+    }
+
+    .tt-page .brand-mark::after {
+      content: '';
+      position: absolute;
+      inset: 6px;
+      background: var(--bg-elev);
+      border-radius: 4px;
+    }
+
+    .tt-page .nav-links {
+      display: flex;
+      gap: 28px;
+      font-size: 14px;
+      color: var(--ink-soft);
+    }
+
+    .tt-page .nav-links a:hover { color: var(--ink); }
+
+    .tt-page .nav-cta {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    @media (max-width: 820px) {
+      .tt-page .nav-links { display: none; }
+    }
+
+    .tt-page .placeholder {
+      padding: 80px 40px;
+      border: 1px dashed var(--line);
+      border-radius: var(--radius);
+      text-align: center;
+      color: var(--ink-soft);
+    }
+
+    .tt-page footer {
+      border-top: 1px solid var(--line);
+      padding: 48px 0 32px;
+      background: var(--bg-elev);
+    }
+
+    /* ====== Modal ====== */
+    .tt-page .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(4px);
+    }
+
+    .tt-page .modal-card {
+      background: var(--bg-elev);
+      border-radius: 24px;
+      padding: 32px;
+      max-width: 480px;
+      width: 90%;
+      box-shadow: var(--shadow-md);
+      animation: modalIn 0.2s ease;
+    }
+
+    @keyframes modalIn {
+      from { opacity: 0; transform: translateY(12px) scale(0.97); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .tt-page .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .tt-page .modal-header h3 {
+      font-size: 22px;
+      font-weight: 700;
+    }
+
+    .tt-page .modal-close {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 1px solid var(--line);
+      background: transparent;
+      color: var(--ink-soft);
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    .tt-page .modal-close:hover { background: var(--bg); }
+
+    .tt-page .modal-desc {
+      font-size: 14px;
+      margin-bottom: 24px;
+    }
+
+    .tt-page .modal-message {
+      font-size: 16px;
+      margin-bottom: 24px;
+      line-height: 1.6;
+      color: var(--ink);
+    }
+
+    .tt-page .modal-form {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .tt-page .form-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .tt-page .form-field label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+
+    .tt-page .form-field input,
+    .tt-page .form-field textarea {
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: var(--bg);
+      color: var(--ink);
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s ease;
+      resize: vertical;
+    }
+
+    .tt-page .form-field input:focus,
+    .tt-page .form-field textarea:focus {
+      border-color: var(--accent);
+    }
+
+    .tt-page .form-field input::placeholder,
+    .tt-page .form-field textarea::placeholder {
+      color: var(--ink-soft);
+      opacity: 0.6;
+    }
+
+    .tt-page .form-error {
+      font-size: 13px;
+      color: #ef4444;
+    }
+
+    .tt-page .modal-submit {
+      width: 100%;
+      justify-content: center;
+      margin-top: 8px;
+    }
+
+    .tt-page .modal-submit:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    /* synapse 演示图片占位（CSS 渐变） */
+    .synapse-demo-placeholder {
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      border-radius: 24px;
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow-md);
+      background:
+        radial-gradient(circle at 20% 30%, rgba(91,108,255,0.35), transparent 45%),
+        radial-gradient(circle at 80% 70%, rgba(139,92,246,0.32), transparent 45%),
+        radial-gradient(circle at 60% 20%, rgba(46,171,122,0.18), transparent 40%),
+        linear-gradient(135deg, #f4f6fb 0%, #ffffff 50%, #eef0fa 100%);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .synapse-demo-placeholder::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(11,13,18,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(11,13,18,0.04) 1px, transparent 1px);
+      background-size: 28px 28px;
+      mask-image: radial-gradient(ellipse 70% 70% at 50% 50%, #000 40%, transparent 100%);
+    }
+    .synapse-demo-placeholder .demo-label {
+      position: relative;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: rgba(11,13,18,0.55);
+      padding: 8px 14px;
+      border-radius: 100px;
+      background: rgba(255,255,255,0.7);
+      border: 1px solid rgba(11,13,18,0.08);
+      backdrop-filter: blur(6px);
+    }
+    .synapse-demo-placeholder .demo-seat {
+      position: absolute;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      box-shadow: 0 6px 18px rgba(91,108,255,0.35);
+      border: 2px solid #fff;
+    }
+    .synapse-demo-placeholder .demo-seat.s1 { top: 18%; left: 22%; background: linear-gradient(135deg, #2eab7a, #5b6cff); }
+    .synapse-demo-placeholder .demo-seat.s2 { top: 14%; right: 26%; background: linear-gradient(135deg, #d9883a, #e27474); }
+    .synapse-demo-placeholder .demo-seat.s3 { bottom: 22%; left: 18%; background: linear-gradient(135deg, #8b5cf6, #5b6cff); }
+    .synapse-demo-placeholder .demo-seat.s4 { bottom: 18%; right: 22%; background: linear-gradient(135deg, #2bb5a2, #2eab7a); }
+    .synapse-demo-placeholder .demo-seat.s5 { top: 50%; left: 8%; transform: translateY(-50%); background: linear-gradient(135deg, #c76fc9, #8b5cf6); }
+    .synapse-demo-placeholder .demo-seat.s6 { top: 50%; right: 8%; transform: translateY(-50%); background: linear-gradient(135deg, #5b8fe0, #5b6cff); }
+    .synapse-demo-placeholder .demo-table {
+      position: absolute;
+      width: 46%;
+      height: 32%;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      border-radius: 28px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.9), rgba(244,246,251,0.85));
+      border: 1px solid rgba(11,13,18,0.08);
+      box-shadow: 0 8px 30px rgba(11,13,18,0.06);
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect } = React;
+
+    /* ====== NAV ====== */
+    function Nav({ onLogin, onApply, onStart, isLoggedIn, hasTenant }) {
+      return (
+        <nav className="nav">
+          <div className="wrap nav-row">
+            <a className="brand" href="#top">
+              <span className="brand-mark" />
+              TeamThink
+            </a>
+            <div className="nav-links">
+              <a href="#pain">价值</a>
+              <a href="#synapse">共创</a>
+              <a href="#core">三原力</a>
+              <a href="#product">产品</a>
+              <a href="#tech">技术</a>
+            </div>
+            <div className="nav-cta">
+              {!isLoggedIn && (
+                <button className="btn btn-ghost" onClick={onLogin}>登录</button>
+              )}
+              {isLoggedIn && hasTenant ? (
+                <button className="btn btn-primary" onClick={onStart}>开始使用 →</button>
+              ) : (
+                <button className="btn btn-primary" onClick={onApply}>申请试用 →</button>
+              )}
+            </div>
+          </div>
+        </nav>
+      );
+    }
+
+    /* ====== HERO PANEL ====== */
+    function HeroPanel() {
+      const lines = [
+        { t: 'plan', c: '> 分解需求：电商促销页 v2' },
+        { t: 'ok', c: '✓ 命中团队规范：PromotionLayout' },
+        { t: 'ok', c: '✓ 复用技能包：ABTest-Hook' },
+        { t: 'run', c: '⚡ 生成 14 个文件 · 2,841 行' },
+        { t: 'test', c: '◉ 沙箱测试通过 · 16/16' },
+        { t: 'done', c: '✦ 已合并到 main · 等待你确认' },
+      ];
+      return (
+        <div style={{
+          background: 'var(--bg-elev)',
+          border: '1px solid var(--line)',
+          borderRadius: 24,
+          boxShadow: 'var(--shadow-md)',
+          overflow: 'hidden',
+        }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '14px 18px', borderBottom: '1px solid var(--line)',
+          }}>
+            <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#ff5f57' }} />
+            <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#febc2e' }} />
+            <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#28c840' }} />
+            <span className="mono" style={{ marginLeft: 12, fontSize: 12, color: 'var(--ink-soft)' }}>
+              teamthink ▸ agent #promo-v2
+            </span>
+          </div>
+          <div style={{ padding: '22px 22px 8px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {lines.map((l, i) => (
+              <div key={i} className="mono" style={{
+                fontSize: 13,
+                color: l.t === 'ok' ? '#10b981' : l.t === 'done' ? 'var(--accent)' : 'var(--ink)',
+              }}>
+                {l.c}
+              </div>
+            ))}
+          </div>
+          <div style={{
+            padding: 18, margin: 18, borderRadius: 14,
+            background: 'linear-gradient(135deg, color-mix(in oklab, var(--accent) 10%, transparent), transparent)',
+            border: '1px solid var(--line)',
+          }}>
+            <div style={{
+              fontSize: 11, letterSpacing: '.12em',
+              color: 'var(--ink-soft)', textTransform: 'uppercase',
+            }}>
+              Skill Pack 已激活
+            </div>
+            <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {['monorepo-conv', 'design-token', 'i18n-zh', 'a11y-lvl-AA'].map((s) => (
+                <span key={s} className="mono" style={{
+                  fontSize: 11, padding: '4px 10px',
+                  background: 'var(--bg)', border: '1px solid var(--line)',
+                  borderRadius: 100,
+                }}>
+                  #{s}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ====== HERO ====== */
+    function Hero({ onApply, onStart, isLoggedIn, hasTenant }) {
+      const useStart = isLoggedIn && hasTenant;
+      return (
+        <section id="hero" style={{ paddingTop: 'clamp(48px, 6vw, 80px)' }}>
+          <div className="wrap" style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0,1.15fr) minmax(0,0.95fr)',
+            gap: 64, alignItems: 'center',
+          }}>
+            <div>
+              <span className="eyebrow">
+                <span className="dot" /> 企业级 AI Coding · 内测开放中
+              </span>
+              <h1 style={{
+                fontSize: 'clamp(40px, 5.6vw, 76px)',
+                lineHeight: 1.04, marginTop: 24, fontWeight: 800,
+              }}>
+                把团队最优秀的<br />
+                工程能力，编译成<br />
+                <span style={{
+                  background: 'linear-gradient(120deg, var(--accent), var(--accent-2))',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                }}>
+                  共享智能体
+                </span>。
+              </h1>
+              <p style={{ maxWidth: 520, marginTop: 24, fontSize: 17 }}>
+                TeamThink 不是又一个 Copilot。它把需求到代码的全流程交给团队级 Agent，让研发资源弹性化、让经验永久沉淀，让团队的协作力成为组织真正的护城河。
+              </p>
+              <div style={{ display: 'flex', gap: 12, marginTop: 32, flexWrap: 'wrap' }}>
+                <button className="btn btn-primary" onClick={useStart ? onStart : onApply}>
+                  {useStart ? '开始使用 →' : '申请企业试用 →'}
+                </button>
+                <a className="btn btn-ghost" href="#product">查看产品能力</a>
+              </div>
+              <div style={{ display: 'flex', gap: 40, marginTop: 48, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.02em' }}>40% → 100%</div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 4, letterSpacing: '.04em' }}>
+                    代码可用率跃升
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.02em' }}>3.2×</div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 4, letterSpacing: '.04em' }}>
+                    研发吞吐扩展
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.02em' }}>0</div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 4, letterSpacing: '.04em' }}>
+                    关键人离职风险
+                  </div>
+                </div>
+              </div>
+            </div>
+            <HeroPanel />
+          </div>
+        </section>
+      );
+    }
+
+    /* ====== PAIN ====== */
+    function Pain() {
+      const items = [
+        { k: '01', title: '交付级可用率', body: 'TeamThink 输出的代码贴合团队规范、上下文与运行环境，从需求到可运行模块一次到位，让团队拿到的就是上线就绪的成果。', tag: 'Productivity' },
+        { k: '02', title: '弹性研发资源', body: '研发分身机制让一位工程师同时调度多个并行任务，瓶颈从人力切换为算力，团队产能可随业务节奏自由伸缩。', tag: 'Capacity' },
+        { k: '03', title: '可沉淀的团队智慧', body: '团队规范、调试经验、领域知识沉淀为长期 Agent 上下文，成为可被检索、复用与传承的组织数字资产。', tag: 'Knowledge' },
+      ];
+      return (
+        <section id="pain" style={{
+          background: 'linear-gradient(180deg, var(--bg), color-mix(in oklab, var(--accent) 4%, var(--bg)) 100%)',
+        }}>
+          <div className="wrap">
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0,1fr) minmax(0,1.4fr)',
+              gap: 64, alignItems: 'end', marginBottom: 56,
+            }}>
+              <div>
+                <span className="eyebrow"><span className="dot" /> 现实困境</span>
+                <h2 style={{ fontSize: 'clamp(32px,4vw,52px)', marginTop: 20 }}>
+                  AI 工具虽然普及，<br />团队却依然痛苦。
+                </h2>
+              </div>
+              <p style={{ fontSize: 17, maxWidth: 520 }}>
+                TeamThink 聚焦团队级 AI 编程的三件关键事——把可用率、研发弹性与知识沉淀做到极致，让组织的工程能力持续生长。
+              </p>
+            </div>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+              gap: 1, background: 'var(--line)',
+              borderRadius: 24, overflow: 'hidden',
+              border: '1px solid var(--line)',
+            }}>
+              {items.map((it) => (
+                <article key={it.k} style={{
+                  background: 'var(--bg-elev)',
+                  padding: 'var(--density-pad)',
+                  display: 'flex', flexDirection: 'column',
+                  gap: 18, minHeight: 280,
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span className="mono" style={{ fontSize: 12, color: 'var(--ink-soft)' }}>
+                      {it.k} / 03
+                    </span>
+                    <span style={{
+                      fontSize: 11, padding: '4px 10px',
+                      border: '1px solid var(--line)', borderRadius: 100,
+                      color: 'var(--ink-soft)',
+                    }}>
+                      {it.tag}
+                    </span>
+                  </div>
+                  <h3 style={{ fontSize: 24, fontWeight: 700 }}>{it.title}</h3>
+                  <p style={{ flex: 1 }}>{it.body}</p>
+                  <div style={{
+                    height: 4, borderRadius: 4,
+                    background: 'linear-gradient(90deg, var(--accent), transparent)',
+                  }} />
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+      );
+    }
+
+    /* ====== SYNAPSE ====== */
+    function Synapse() {
+      const highlights = [
+        { k: '01', t: '每个方案都是「群策群力」的产物', d: '后端、前端、产品、安全、业务等不同领域的 AI 分身在同一会议桌上共创，每个结论都经过多视角碰撞与互相挑战。' },
+        { k: '02', t: '本人有空就主导，没空也不卡住', d: '你可以亲自坐到桌前推进，也可以让你的 AI 分身代表你参与共创——讨论照常进行，关键决策仍可异步回到你手上确认。' },
+        { k: '03', t: '真正解决人力不足', d: '再小的团队，也能在 5 分钟内召集一支跨域专家团完成方案评审，告别"等人对齐"的协作瓶颈。' },
+      ];
+      return (
+        <section id="synapse" style={{
+          background: 'linear-gradient(180deg, color-mix(in oklab, var(--accent) 4%, var(--bg)) 0%, var(--bg) 100%)',
+        }}>
+          <div className="wrap">
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)',
+              gap: 64, alignItems: 'center',
+            }}>
+              <div>
+                <span className="eyebrow"><span className="dot" /> Synapse · 多分身共创</span>
+                <h2 style={{ fontSize: 'clamp(32px,4vw,52px)', marginTop: 20, lineHeight: 1.08 }}>
+                  重塑「需求 → 研发」<br />的协作范式。
+                </h2>
+                <p style={{ marginTop: 22, fontSize: 17, maxWidth: 520 }}>
+                  传统模式下，需求要在产品、研发、测试之间反复流转、层层翻译。TeamThink 把这一切搬进 Synapse 共创会议室：跨领域 AI 专家分身围坐一桌，与你一起完成从想法到可执行 PRD 的完整生产过程。本人没空时，你的 AI 分身可以代表你出席，讨论不必为某一个人停下,当然你的开发工作也可以让它代替。
+                </p>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3,1fr)',
+                  gap: 20, marginTop: 36, maxWidth: 520,
+                }}>
+                  <div>
+                    <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.02em' }}>40+</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 4, letterSpacing: '.04em' }}>领域专家分身</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.02em' }}>5min</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 4, letterSpacing: '.04em' }}>开会到出稿</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.02em' }}>10+</div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 4, letterSpacing: '.04em' }}>各岗位代表</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="synapse-demo-placeholder" aria-label="Synapse 共创会议桌">
+                <div className="demo-table" />
+                <div className="demo-seat s1" />
+                <div className="demo-seat s2" />
+                <div className="demo-seat s3" />
+                <div className="demo-seat s4" />
+                <div className="demo-seat s5" />
+                <div className="demo-seat s6" />
+                <div className="demo-label">SYNAPSE · ROUND TABLE</div>
+              </div>
+            </div>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+              gap: 16, marginTop: 64,
+            }}>
+              {highlights.map((h) => (
+                <div key={h.k} style={{
+                  padding: 'var(--density-pad)', borderRadius: 20,
+                  border: '1px solid var(--line)', background: 'var(--bg-elev)',
+                }}>
+                  <div className="mono" style={{ fontSize: 11, color: 'var(--accent)', letterSpacing: '.12em' }}>
+                    {h.k}
+                  </div>
+                  <h3 style={{ fontSize: 20, fontWeight: 700, marginTop: 12 }}>{h.t}</h3>
+                  <p style={{ marginTop: 10, fontSize: 14 }}>{h.d}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      );
+    }
+
+    /* ====== CORE ====== */
+    function Core() {
+      const items = [
+        { n: '01', title: 'AI Coding Native', body: '只要有想法，就能通过流程化方式直接实现为可运行代码。不依赖开发人员，产品/运营自主完成从需求到上线的完整闭环。', kpi: '交付完整度' },
+        { n: '02', title: '研发资源弹性化', body: '研发分身机制，让工程师从"执行者"升级为"分身管理者"。瓶颈从人力切换为算力，可无限横向扩展。', kpi: '吞吐线性扩展' },
+        { n: '03', title: '经验自成长留存', body: '累积记忆 + 技能包，团队私有规范、调试经验沉淀为永久 Agent 上下文。用得越深，越不可替代。', kpi: '离职零损耗' },
+      ];
+      return (
+        <section id="core">
+          <div className="wrap">
+            <div style={{ textAlign: 'center', marginBottom: 64 }}>
+              <span className="eyebrow"><span className="dot" /> TeamThink 三原力</span>
+              <h2 style={{
+                fontSize: 'clamp(32px,4vw,52px)',
+                marginTop: 20, maxWidth: 780, margin: '20px auto 0',
+              }}>
+                三件事，重新定义团队级 AI 编程。
+              </h2>
+            </div>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+              gap: 24,
+            }}>
+              {items.map((it) => (
+                <div key={it.n} style={{
+                  position: 'relative', padding: 'var(--density-pad)',
+                  borderRadius: 24, background: 'var(--bg-elev)',
+                  border: '1px solid var(--line)', boxShadow: 'var(--shadow-sm)',
+                  overflow: 'hidden',
+                }}>
+                  <div style={{
+                    position: 'absolute', top: -24, right: -12,
+                    fontSize: 120, fontWeight: 800,
+                    color: 'color-mix(in oklab, var(--accent) 12%, transparent)',
+                    letterSpacing: '-0.06em', pointerEvents: 'none',
+                  }}>
+                    {it.n}
+                  </div>
+                  <div className="mono" style={{
+                    fontSize: 11, color: 'var(--accent)',
+                    letterSpacing: '.12em', textTransform: 'uppercase',
+                  }}>
+                    {it.kpi}
+                  </div>
+                  <h3 style={{ fontSize: 22, marginTop: 16, fontWeight: 700 }}>{it.title}</h3>
+                  <p style={{ marginTop: 14, position: 'relative' }}>{it.body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      );
+    }
+
+    /* ====== PRODUCT (Tabs) ====== */
+    function Product() {
+      const tabs = [
+        { key: 'engine', label: '团队能力引擎', desc: '将优秀开发者的拆解、选型、规范编码为可复用的 Agent 配置。',
+          body: ['观察 · 自动从代码仓库提取团队规范与领域知识',
+            '建模 · 把最优工程师的工作流编译为可执行 Agent',
+            '运行 · 对外暴露统一的「团队大脑」API'] },
+        { key: 'plan', label: '智能任务规划', desc: '模糊需求一键分解为子任务，统一应用团队工程标准。',
+          body: ['需求 → 拆解 → 排期 → 执行 全链路自动',
+            '任务图谱可追溯，决策过程对管理者透明',
+            '从 PRD 到代码无缝衔接，告别需求翻译损耗'] },
+        { key: 'router', label: '多模型调度', desc: '多模型并行生成 + 选举共识机制，从根源上压制单一模型的幻觉与偏差。',
+          body: ['同任务多模型并行推理，交叉验证 Claude / GPT / 通义 / DeepSeek',
+            '选举层基于 AST 一致性、测试通过率、规范契合度投票决策',
+            '少数派输出自动复盘，幻觉率较单模型下降 70%+'] },
+        { key: 'sandbox', label: '安全沙箱执行', desc: '隔离环境自动测试与调试，只交付通过验证的可运行模块。',
+          body: ['毫秒级冷启动沙箱，支持多语言运行时',
+            '自动生成测试用例并迭代修复',
+            '私有化部署默认启用网络隔离'] },
+        { key: 'memory', label: '累积记忆 + 技能包', desc: '私有框架、规范、调试经验沉淀为 Agent 长期上下文。',
+          body: ['可版本化、可审计的团队记忆库',
+            '技能包市场，跨项目复用最佳实践',
+            '团队用得越久，Agent 越懂你'] },
+        { key: 'twin', label: '研发分身机制', desc: '工程师从执行者升级为分身管理者，资源弹性接近无限。',
+          body: ['一个工程师同时调度 5-20 个分身并行任务',
+            '人类只做关键评审与方向决策',
+            '资源瓶颈从人力切换为算力'] },
+      ];
+      const [active, setActive] = useState('engine');
+      const cur = tabs.find((t) => t.key === active);
+      return (
+        <section id="product" style={{
+          background: 'var(--bg-elev)',
+          borderTop: '1px solid var(--line)',
+          borderBottom: '1px solid var(--line)',
+        }}>
+          <div className="wrap">
+            <div style={{
+              display: 'flex', justifyContent: 'space-between',
+              alignItems: 'end', flexWrap: 'wrap',
+              gap: 24, marginBottom: 48,
+            }}>
+              <div>
+                <span className="eyebrow"><span className="dot" /> 产品能力全景</span>
+                <h2 style={{ fontSize: 'clamp(32px,4vw,52px)', marginTop: 20 }}>
+                  企业级开箱即用，<br />六大核心能力。
+                </h2>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {['企业级', 'IDE 原生插件'].map((t) => (
+                  <span key={t} style={{
+                    padding: '8px 14px', border: '1px solid var(--line)',
+                    borderRadius: 100, fontSize: 13, color: 'var(--ink-soft)',
+                  }}>
+                    {t}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0,260px) minmax(0,1fr)',
+              gap: 32, alignItems: 'stretch',
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {tabs.map((t) => (
+                  <button key={t.key} onClick={() => setActive(t.key)} style={{
+                    textAlign: 'left', padding: '14px 16px', borderRadius: 14,
+                    border: '1px solid ' + (active === t.key ? 'transparent' : 'var(--line)'),
+                    background: active === t.key ? 'var(--ink)' : 'transparent',
+                    color: active === t.key ? 'var(--bg)' : 'var(--ink)',
+                    fontWeight: 600, fontSize: 14,
+                    transition: 'background .2s ease',
+                  }}>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              <div style={{
+                padding: 'var(--density-pad)',
+                borderRadius: 24, background: 'var(--bg)',
+                border: '1px solid var(--line)',
+                minHeight: 360, display: 'flex', flexDirection: 'column',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span className="mono" style={{
+                    fontSize: 11, color: 'var(--ink-soft)',
+                    letterSpacing: '.12em', textTransform: 'uppercase',
+                  }}>
+                    module · {cur.key}
+                  </span>
+                  <span style={{
+                    fontSize: 11, padding: '4px 10px', borderRadius: 100,
+                    background: 'color-mix(in oklab, var(--accent) 15%, transparent)',
+                    color: 'var(--accent)',
+                  }}>
+                    已上线
+                  </span>
+                </div>
+                <h3 style={{ fontSize: 30, fontWeight: 700, marginTop: 16 }}>{cur.label}</h3>
+                <p style={{ marginTop: 12, fontSize: 16, maxWidth: 600 }}>{cur.desc}</p>
+                <ul style={{
+                  listStyle: 'none', padding: 0, margin: '28px 0 0',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                  gap: 14,
+                }}>
+                  {cur.body.map((b) => (
+                    <li key={b} style={{
+                      display: 'flex', gap: 10, alignItems: 'flex-start',
+                      padding: 14, borderRadius: 12,
+                      background: 'var(--bg-elev)', border: '1px solid var(--line)',
+                    }}>
+                      <span style={{
+                        display: 'inline-flex', width: 18, height: 18,
+                        borderRadius: '50%', background: 'var(--accent)',
+                        color: 'white', alignItems: 'center',
+                        justifyContent: 'center', fontSize: 10, fontWeight: 700,
+                        flexShrink: 0, marginTop: 2,
+                      }}>
+                        ✓
+                      </span>
+                      <span style={{ fontSize: 14, color: 'var(--ink)' }}>{b}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+      );
+    }
+
+    /* ====== TECH ====== */
+    function Tech() {
+      const moats = [
+        { t: '团队级 Agent 调度系统', d: '多分身协同 + 共享上下文，自研编排框架' },
+        { t: '毫秒级安全沙箱', d: '轻量化容器，冷启动 < 200ms，多语言运行时' },
+        { t: '多模型智能路由', d: '按任务/成本/风格自动选择模型，统一输出口径' },
+        { t: '累积记忆 + 技能包', d: '结构化团队知识层，跨项目复用与版本管理' },
+        { t: '数据飞轮', d: '使用越深，Agent 效果越强，竞争壁垒指数累积' },
+      ];
+      return (
+        <section id="tech">
+          <div className="wrap">
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0,1fr) minmax(0,1.4fr)',
+              gap: 64, alignItems: 'start',
+            }}>
+              <div style={{ position: 'sticky', top: 96 }}>
+                <span className="eyebrow"><span className="dot" /> 技术护城河</span>
+                <h2 style={{ fontSize: 'clamp(32px,3.6vw,46px)', marginTop: 20 }}>
+                  不是又一个 Copilot。<br />而是团队的「下限引擎」。
+                </h2>
+                <p style={{ marginTop: 20, maxWidth: 420, fontSize: 16 }}>
+                  个人级编程助手提升「上限」，TeamThink 提升「下限」——让每一个团队成员的产出，向最优秀的工程师对齐。
+                </p>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {moats.map((m, i) => (
+                  <div key={m.t} style={{
+                    display: 'grid',
+                    gridTemplateColumns: '48px 1fr auto',
+                    gap: 20, alignItems: 'center',
+                    padding: '22px 24px',
+                    border: '1px solid var(--line)',
+                    borderRadius: 18, background: 'var(--bg-elev)',
+                  }}>
+                    <div className="mono" style={{ fontSize: 12, color: 'var(--ink-soft)' }}>
+                      0{i + 1}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 18, fontWeight: 700 }}>{m.t}</div>
+                      <div style={{ fontSize: 14, color: 'var(--ink-soft)', marginTop: 4 }}>{m.d}</div>
+                    </div>
+                    <span style={{
+                      width: 32, height: 32, borderRadius: '50%',
+                      display: 'inline-flex', alignItems: 'center',
+                      justifyContent: 'center',
+                      border: '1px solid var(--line)',
+                      color: 'var(--ink-soft)',
+                    }}>
+                      →
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+      );
+    }
+
+    /* ====== WHY ====== */
+    function Why() {
+      const items = [
+        { t: '领先定位', d: '唯一专注「团队级」AI 编程平台，填补个体工具与企业交付之间的空白。' },
+        { t: '知识沉淀', d: '经验不再随人流失，优秀编码规范、调试策略成为团队的永久数字资产。' },
+        { t: '复杂场景驾驭力', d: '支持大型项目长期演进，跨模块、跨团队、跨周期持续输出稳定可靠的工程能力。' },
+      ];
+      return (
+        <section id="why">
+          <div className="wrap">
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+              gap: 20,
+            }}>
+              {items.map((it, i) => (
+                <div key={it.t} style={{
+                  padding: 'var(--density-pad)',
+                  borderRadius: 20, background: 'var(--bg-elev)',
+                  border: '1px solid var(--line)',
+                }}>
+                  <div className="mono" style={{ fontSize: 12, color: 'var(--ink-soft)' }}>
+                    0{i + 1}
+                  </div>
+                  <h3 style={{ fontSize: 22, marginTop: 14, fontWeight: 700 }}>{it.t}</h3>
+                  <p style={{ marginTop: 10 }}>{it.d}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      );
+    }
+
+    /* ====== CTA ====== */
+    function CTA({ onApply, onStart, isLoggedIn, hasTenant }) {
+      const useStart = isLoggedIn && hasTenant;
+      return (
+        <section id="cta" style={{ paddingTop: 0 }}>
+          <div className="wrap">
+            <div style={{
+              position: 'relative', overflow: 'hidden',
+              borderRadius: 32,
+              padding: 'clamp(40px, 6vw, 80px)',
+              background: 'linear-gradient(135deg, #0b0d12 0%, #1a1d2e 100%)',
+              color: '#f1f3f8', textAlign: 'center',
+            }}>
+              <div style={{
+                position: 'absolute', inset: 0,
+                background: 'radial-gradient(circle at 20% 20%, color-mix(in oklab, var(--accent) 35%, transparent), transparent 50%), radial-gradient(circle at 80% 80%, color-mix(in oklab, var(--accent-2) 35%, transparent), transparent 50%)',
+                pointerEvents: 'none',
+              }} />
+              <div style={{ position: 'relative' }}>
+                <span className="eyebrow" style={{
+                  background: 'rgba(255,255,255,.06)',
+                  borderColor: 'rgba(255,255,255,.12)',
+                  color: '#cbd0e6',
+                }}>
+                  <span className="dot" /> 内测开放
+                </span>
+                <h2 style={{ fontSize: 'clamp(32px,4.4vw,56px)', marginTop: 24, color: 'white' }}>
+                  让团队智能体，<br />成为你的研发基石。
+                </h2>
+                <p style={{ maxWidth: 560, margin: '20px auto 0', color: '#a4abc7', fontSize: 16 }}>
+                  抢先体验 TeamThink，帮助团队统一 AI 编码标准、沉淀研发智慧，告别关键人风险。
+                </p>
+                <div style={{
+                  display: 'flex', gap: 12,
+                  justifyContent: 'center', marginTop: 36, flexWrap: 'wrap',
+                }}>
+                  <button className="btn" onClick={useStart ? onStart : onApply}
+                    style={{ background: 'white', color: '#0b0d12' }}>
+                    {useStart ? '开始使用 →' : '申请试用 →'}
+                  </button>
+                  {!useStart && (
+                    <button className="btn btn-ghost" onClick={onApply}
+                      style={{ borderColor: 'rgba(255,255,255,.18)', color: 'white' }}>
+                      加入候补名单
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      );
+    }
+
+    /* ====== FOOTER ====== */
+    function Footer() {
+      const cols = [
+        { h: '产品', items: ['企业级方案', 'IDE 插件', '技能包市场'] },
+        { h: '资源', items: ['技术白皮书', '案例研究', 'API 文档', '变更日志'] },
+        { h: '团队', items: ['关于我们', '加入我们', '合作伙伴', '媒体咨询'] },
+      ];
+      return (
+        <footer>
+          <div className="wrap" style={{
+            display: 'grid',
+            gridTemplateColumns: '1.4fr 1fr 1fr 1fr',
+            gap: 40, marginBottom: 40,
+          }}>
+            <div>
+              <div className="brand" style={{ fontSize: 18 }}>
+                <span className="brand-mark" />
+                TeamThink
+              </div>
+              <p style={{ marginTop: 14, maxWidth: 260, fontSize: 13 }}>
+                企业级 AI 编程智能体平台 · 把团队最优秀的工程能力凝聚成共享智能体。
+              </p>
+            </div>
+            {cols.map((c) => (
+              <div key={c.h}>
+                <div style={{
+                  fontSize: 12, letterSpacing: '.12em',
+                  color: 'var(--ink-soft)', textTransform: 'uppercase',
+                  marginBottom: 14,
+                }}>
+                  {c.h}
+                </div>
+                <ul style={{
+                  listStyle: 'none', padding: 0, margin: 0,
+                  display: 'flex', flexDirection: 'column', gap: 10,
+                }}>
+                  {c.items.map((i) => (
+                    <li key={i}>
+                      <a href="javascript:void(0)" style={{ fontSize: 14, color: 'var(--ink)' }}>{i}</a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+          <div className="wrap" style={{
+            display: 'flex', justifyContent: 'space-between',
+            flexWrap: 'wrap', gap: 12, paddingTop: 24,
+            borderTop: '1px solid var(--line)',
+            fontSize: 12, color: 'var(--ink-soft)',
+          }}>
+            <div>© 2026 TeamThink · 面向未来团队 AI 编程基座</div>
+          </div>
+        </footer>
+      );
+    }
+
+    /* ====== Apply Modal ====== */
+    function ApplyModal({ onClose, onSuccess }) {
+      const [department, setDepartment] = useState('');
+      const [reason, setReason] = useState('');
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState('');
+
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        setError('');
+        setLoading(true);
+        // 模拟提交（独立 HTML 不调用真实后端）
+        setTimeout(() => {
+          setLoading(false);
+          alert('【演示模式】申请已提交：\n部门：' + (department || '未填写') + '\n理由：' + (reason || '未填写'));
+          onSuccess();
+        }, 500);
+      };
+
+      return (
+        <div className="modal-overlay" onClick={onClose}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>申请试用</h3>
+              <button className="modal-close" onClick={onClose}>✕</button>
+            </div>
+            <p className="modal-desc">填写以下信息，我们将尽快审核您的申请。</p>
+            <form onSubmit={handleSubmit} className="modal-form">
+              <div className="form-field">
+                <label htmlFor="dept">部门</label>
+                <input id="dept" type="text" placeholder="请输入您的部门"
+                  value={department}
+                  onChange={(e) => setDepartment(e.target.value)} />
+              </div>
+              <div className="form-field">
+                <label htmlFor="reason">申请理由</label>
+                <textarea id="reason" placeholder="请简述您希望试用的原因"
+                  rows={4} value={reason}
+                  onChange={(e) => setReason(e.target.value)} />
+              </div>
+              {error && <div className="form-error">{error}</div>}
+              <button type="submit" className="btn btn-primary modal-submit" disabled={loading}>
+                {loading ? '提交中...' : '提交申请'}
+              </button>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    /* ====== Status Modal ====== */
+    function StatusModal({ message, onClose }) {
+      return (
+        <div className="modal-overlay" onClick={onClose}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>提示</h3>
+              <button className="modal-close" onClick={onClose}>✕</button>
+            </div>
+            <p className="modal-message">{message}</p>
+            <button className="btn btn-primary modal-submit" onClick={onClose}>
+              我知道了
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    /* ====== Welcome Page ====== */
+    function WelcomePage() {
+      const [showApplyModal, setShowApplyModal] = useState(false);
+      const [showStatusModal, setShowStatusModal] = useState(false);
+      const [statusMessage, setStatusMessage] = useState('');
+      // 独立 HTML 演示：默认未登录、无租户
+      const [isLoggedIn] = useState(false);
+      const [hasTenant] = useState(false);
+
+      const handleLogin = () => {
+        setStatusMessage('【演示模式】这里会跳转到企业 SSO 登录页。');
+        setShowStatusModal(true);
+      };
+
+      const handleStart = () => {
+        setStatusMessage('【演示模式】这里会进入工作台。');
+        setShowStatusModal(true);
+      };
+
+      const handleApply = () => {
+        setShowApplyModal(true);
+      };
+
+      const handleApplySuccess = () => {
+        setShowApplyModal(false);
+        setStatusMessage('申请已提交，请等待管理员审批。');
+        setShowStatusModal(true);
+      };
+
+      return (
+        <div className="tt-page" id="top">
+          <Nav
+            onLogin={handleLogin}
+            onApply={handleApply}
+            onStart={handleStart}
+            isLoggedIn={isLoggedIn}
+            hasTenant={hasTenant}
+          />
+          <main>
+            <Hero
+              onApply={handleApply}
+              onStart={handleStart}
+              isLoggedIn={isLoggedIn}
+              hasTenant={hasTenant}
+            />
+            <Pain />
+            <Synapse />
+            <Core />
+            <Product />
+            <Tech />
+            <Why />
+            <CTA
+              onApply={handleApply}
+              onStart={handleStart}
+              isLoggedIn={isLoggedIn}
+              hasTenant={hasTenant}
+            />
+          </main>
+          <Footer />
+
+          {showApplyModal && (
+            <ApplyModal onClose={() => setShowApplyModal(false)} onSuccess={handleApplySuccess} />
+          )}
+          {showStatusModal && (
+            <StatusModal message={statusMessage} onClose={() => setShowStatusModal(false)} />
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<WelcomePage />);
+  </script>
+</body>
+</html>

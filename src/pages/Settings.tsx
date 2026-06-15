@@ -97,6 +97,16 @@ const Settings: React.FC = () => {
     setSaveStatus('saving');
     try {
       await saveServerConfig(serverUrl.trim(), apiKey.trim());
+      // 保存后立即验证密钥是否写入了数据库
+      const verifyConfig = await getCurrentServerConfig();
+      const keyDisplay = verifyConfig.apiKey ? `${verifyConfig.apiKey.slice(0, 6)}****(${verifyConfig.apiKey.length}chars)` : 'empty';
+      addDebugLog(`Save verify: url=${verifyConfig.serverUrl}, apiKey=${keyDisplay}`);
+      if (apiKey.trim() && verifyConfig.apiKey !== apiKey.trim()) {
+        const inputDisplay = `${apiKey.trim().slice(0, 6)}****`;
+        const dbDisplay = verifyConfig.apiKey ? `${verifyConfig.apiKey.slice(0, 6)}****` : 'empty';
+        addDebugLog(`WARNING: Key mismatch! input: ${inputDisplay}, db: ${dbDisplay}`);
+        alert('Key save may have failed: the value in the database does not match your input. Please reopen settings page to check.');
+      }
       setSaveStatus('saved');
       setTimeout(() => {
         setSaveStatus('idle');
@@ -211,7 +221,7 @@ const Settings: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
             <p className="mt-1 text-xs text-gray-500">
-              服务端分配的 API Key，用于身份验证（如果服务端配置了密钥）
+              服务端分配的 API Key， 用于身份验证。 如果服务端未配置可留空。 保存后会自动验证密钥是否生效。
             </p>
           </div>
 

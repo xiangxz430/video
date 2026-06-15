@@ -65,6 +65,8 @@ async function getServerConfig(): Promise<ServerConfig> {
 
   console.log('[getServerConfig] serverUrlConfig:', JSON.stringify(serverUrlConfig));
   console.log('[getServerConfig] 最终使用 serverUrl:', serverUrl || '(未配置)');
+  // 关键诊断：打印密钥状态（脱敏）
+  console.log('[getServerConfig] apiKey 状态:', apiKey ? `已配置(${apiKey.slice(0, 6)}****${apiKey.length}字符)` : '未配置(空字符串)');
 
   if (!serverUrl) {
     throw new Error('服务端地址未配置，请先在设置页面配置服务端地址');
@@ -89,6 +91,15 @@ export async function saveServerConfig(serverUrl: string, apiKey: string): Promi
       model: 'default'
     })
   ]);
+
+  // 保存后验证：确认密钥确实写入了数据库
+  const verifyConfig = await getApiConfig('server_api_key');
+  const verifyKey = verifyConfig?.apiKey || '';
+  if (apiKey && verifyKey !== apiKey) {
+    console.error('[saveServerConfig] 密钥保存后验证失败！ 期望:', apiKey.slice(0, 6) + '****', '实际:', verifyKey.slice(0, 6) + '****');
+    throw new Error('密钥保存失败：数据库中的值与预期不一致，请重试');
+  }
+  console.log('[saveServerConfig] 密钥保存验证通过, 长度:', verifyKey.length);
 }
 
 // 默认超时时间
@@ -121,6 +132,11 @@ async function serverFetch(endpoint: string, body: any, options?: { timeout?: nu
         errorMessage = errorData.error || errorData.message || errorMessage;
       } catch {
         if (response.body) errorMessage = response.body;
+      }
+      // 401 认证失败：给出明确的密钥问题提示
+      if (response.status === 401) {
+        const keyHint = apiKey ? `(当前密钥: ${apiKey.slice(0, 6)}****)` : '(未配置密钥)';
+        throw new Error(`认证失败: ${errorMessage} ${keyHint} - 请在设置页面检查服务端密钥是否正确`);
       }
       throw new Error(errorMessage);
     }
@@ -199,7 +215,7 @@ async function fetchSSE<T>(
     ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {})
   };
 
-  console.log('[fetchSSE] POST', url);
+  console.log('[fetchSSE] POST', url, '密钥状态:', apiKey ? `已配置(${apiKey.slice(0, 6)}****)` : '未配置');
 
   try {
     const response = await fetch(url, {
@@ -211,6 +227,11 @@ async function fetchSSE<T>(
 
     if (!response.ok) {
       const errorText = await response.text();
+      // 401 认证失败：给出明确的密钥问题提示
+      if (response.status === 401) {
+        const keyHint = apiKey ? `(当前密钥: ${apiKey.slice(0, 6)}****)` : '(未配置密钥)';
+        throw new Error(`认证失败(401): ${errorText} ${keyHint} - 请在设置页面检查服务端密钥是否正确`);
+      }
       throw new Error(`HTTP ${response.status}: ${errorText}`);
     }
 

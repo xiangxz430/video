@@ -19,8 +19,8 @@ import { apiKeysRouter } from './routes/apiKeys.js';
 import { adminRouter } from './routes/admin.js';
 import { clientStatsRouter } from './routes/clientStats.js';
 import { config } from './config/index.js';
-import { initializeFromEnv } from './services/apiKeyService.js';
-import { connectMongo, closeMongo } from './services/mongoService.js';
+import { initializeFromEnv, loadFromDatabase } from './services/apiKeyService.js';
+import { connectMongo, closeMongo, migrateApiKeysFromJson } from './services/mongoService.js';
 
 const app = express();
 
@@ -49,8 +49,7 @@ app.options('*', cors({
 
 app.use(express.json({ limit: '50mb' }));
 
-// 初始化：从环境变量导入默认 API Key
-initializeFromEnv(config.apiKey);
+// 注意：initializeFromEnv 已移到 startServer() 中异步执行，确保 MongoDB 连接后再初始化
 
 // Health check (无需认证)
 app.get('/api/health', (req, res) => {
@@ -85,14 +84,26 @@ app.use('/api/video', videoRouter);
 // 客户端统计路由（需要认证）
 app.use('/api/stats', clientStatsRouter);
 
-// 启动服务：先连接 MongoDB，再监听端口
+// 启动服务：先连接 MongoDB，迁移 API Keys，再监听端口
 async function startServer() {
   try {
     await connectMongo();
   } catch (error) {
-    console.error('[启动] MongoDB 连接失败，服务无法启动。请检查 MONGODB_URI 配置。');
-    process.exit(1);
+    console.warn('[启动] MongoDB 连接失败，将降级到文件存储模式。错误:', error);
   }
+
+  // 迁移 API Keys 从 JSON 文件到 MongoDB（仅执行一次）
+  try {
+    await migrateApiKeysFromJson();
+  } catch (error) {
+    console.warn('[启动] API Keys 迁移失败，不影响服务启动:', error);
+  }
+
+  // 从 MongoDB 加载 API Keys 到内存缓存（失败则降级到文件）
+  await loadFromDatabase();
+
+  // 从环境变量导入默认 API Key（如果数据库中不存在则插入）
+  await initializeFromEnv(config.apiKey);
 
   const server = app.listen(config.port, () => {
     console.log(`Server running on port ${config.port}`);
